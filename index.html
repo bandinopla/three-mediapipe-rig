@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ThreeJs - MediaPipe - Rig</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; }
+      canvas { display: block;  }
+	  #credits {
+		position: fixed;
+		bottom:0px;
+		left:0px;
+		max-width: 300px;
+		background-color: rgba(0,0,0,0.5);
+		color: white;
+		padding: 10px;
+	  }
+	  #credits a {color:cyan}
+	  .source-btn {
+        position: absolute;
+        bottom: 32px;
+        right: 32px;
+        color: black;
+		background-color: white;
+		box-shadow: 0 1px 3px rgba(0,0,0,0.6);
+		border-radius: 114px;
+		padding: 18px;
+        font-family: system-ui, sans-serif;
+        font-size: 24px; 
+        text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+		cursor: pointer;
+		z-index: 2;
+      }
+    </style>
+  </head>
+  <body>
+	<div id="credits">
+		<div>
+			Young Lara by <a href="https://sketchfab.com/3d-models/young-lara-croft-tomb-raider-4-3683b756078947e28c61cb3b06b7c37d">Bandinopla</a>
+		</div>
+		<div>
+			Head Scan by Unknown ( uploaded by <a href="https://sketchfab.com/3d-models/bearded-man-60947a1819a1407685cb4332e894e585">kand8998</a>)
+		</div>
+		<div>
+			Tai Lung (tiger) by <a href="https://sketchfab.com/3d-models/tai-lung-kung-fu-panda-chi-master-048995f379e74ab496415f9d2054f7b8">Guilherme Navarro</a>
+		</div>
+		<div>
+			Woman video ref by <a href="https://grok.com/imagine/">Grok</a>
+		</div>
+	</div>
+    <script type="module" src="/playground/main.ts"></script>
+  </body>
+</html>

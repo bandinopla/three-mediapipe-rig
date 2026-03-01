@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.local
+.vite/
+web/
+.npmrc
+3d/
+wasm/
+*.task

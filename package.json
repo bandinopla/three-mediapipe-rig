@@ -1,0 +1,41 @@
+{
+  "name": "three-mediapipe-rig",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Easy setup of a skeletal rig that responds to the motion tracker provided by google's mediapipe webwam feed.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bandinopla/three-mediapipe-rig.git"
+  },
+  "main": "./dist/three-mediapipe-rig.js",
+  "module": "./dist/three-mediapipe-rig.js",
+  "types": "./dist/module.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/three-mediapipe-rig.js",
+      "types": "./dist/module.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite --config vite.dev.config.ts",
+    "build": "vite build --config vite.lib.config.ts",
+    "build:web": "vite build --config vite.dev.config.ts",
+    "preview": "vite preview --config vite.dev.config.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "path": "^0.12.7",
+    "typescript": "~5.7.2",
+    "vite": "^6.1.0",
+    "vite-plugin-dts": "^4.5.4",
+	"@types/three": "^0.183.1"
+  },
+  "peerDependencies": {
+    "three": "^0.182.0",
+	"@mediapipe/tasks-vision": "^0.10.32"
+  }, 
+  "license": "MIT"
+}
