@@ -37,5 +37,6 @@
     "three": "^0.182.0",
 	"@mediapipe/tasks-vision": "^0.10.32"
   }, 
-  "license": "MIT"
+  "license": "MIT",
+  "packageManager": "pnpm@9.0.0"
 }
