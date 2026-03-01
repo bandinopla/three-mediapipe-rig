@@ -85,7 +85,7 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
     });
     const faceTracker = $cfg.ignoreFace
         ? undefined
-        : await loadFaceTracker(vision);
+        : await loadFaceTracker(vision, { modelPath: $cfg.modelPaths.face! });
 
     //#region setup Camera and Canvas...
 	const viewport = document.createElement("div");

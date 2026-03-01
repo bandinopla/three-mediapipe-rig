@@ -9,10 +9,10 @@ import { rootPosition } from "./util/getRootPosition";
 import { getBoneByName } from "./util/getBoneByName";
 import { lookAt } from "./util/lookAt";
 
-export async function loadFaceTracker(vision: any) {
+export async function loadFaceTracker(vision: any, cfg?: { modelPath?: string }) {
     const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
-            modelAssetPath: "face_landmarker.task",
+            modelAssetPath: cfg?.modelPath ?? "face_landmarker.task",
 			delegate: "GPU", 
         },
 		outputFaceBlendshapes: true,
