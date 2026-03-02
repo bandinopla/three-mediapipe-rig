@@ -197,7 +197,7 @@ class HandsTracker extends Tracker<typeof handMarks> {
 		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.index, "middle1" )
 		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.middle, "ring1" )
 		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.ring, "pinky1" )
-		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.pinky, "ring1", true )
+		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.pinky, "ring1"  )
 
 		// //thumb...
 		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.thumb, "index1"  )

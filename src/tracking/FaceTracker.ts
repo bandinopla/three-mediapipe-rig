@@ -185,8 +185,7 @@ class EyeRig {
 		// Map to a -1..1 range
 		const sideMovement = lookRight - lookLeft  // horizontal
 		const verticalMovement = lookDown  - lookUp    // vertical
-
-		console.log("EYE: ", sideMovement, verticalMovement)
+ 
 
 		this.eyeBone.rotation.y =( sideMovement * this.sign) / 2; 
 		this.eyeBone.rotation.x = verticalMovement / 2; 

@@ -11,6 +11,28 @@ This will run 3 models: face, body, hands. So expect a FPS drop.
 
 LIVE EXAMPLE: https://bandinopla.github.io/three-mediapipe-rig/
 
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+  - [Skeleton](#skeleton)
+  - [Facial Animation](#facial-animation)
+- [API](#api)
+  - [`setupTracker(config?)`](#setuptrackerconfig)
+  - [Tracker API](#tracker-api-return-value-of-setuptracker)
+- [Bone Naming](#bone-naming)
+  - [Default bone names](#default-bone-names)
+  - [Custom bone map example](#custom-bone-map-example)
+- [Multiple Characters](#multiple-characters)
+- [Debugging with Video](#debugging-with-video)
+- [Recording](#recording)
+- [License](#license)
+
+---
+
 ## Features
 
 - **Full-body pose tracking** — shoulders, arms, hips, legs, and head
@@ -19,6 +41,7 @@ LIVE EXAMPLE: https://bandinopla.github.io/three-mediapipe-rig/
 - **Automatic bone binding** — maps MediaPipe landmarks to your rig's skeleton using a configurable bone-name map
 - **Webcam & video input** — use a live webcam feed or a pre-recorded video for motion capture
 - **Debug tools** — preview the video/image feed overlaid with landmark visualizations
+- **Recording** — record the motion capture to a file ( .glb )
 
 ## Installation
 ```
@@ -250,6 +273,24 @@ const tracker = await setupTracker({
   displayScale: 0.5,
 });
 ```
+
+## Recording
+You can record the motion of a rig by doing this. Notice the track names of the clip will use the names of the bones from the currently recorded rig.
+
+```ts
+// Start recording
+yourRigBindHandler.startRecording()
+
+// after a while...
+const result = yourRigBindHandler.stopRecording();
+
+// to save the recording to a file....
+result.saveToFile();
+
+// or if you just want the AnimationClip...
+result.clip
+```
+But this will save a .glb containing the rig (mesh, textures, etc...) You would have to strip the mesh data after export or just accept the full GLB and strip it with a post-process tool like [gltf-transform](https://gltf-transform.dev/). The saved .glb will contain the animation clip, the rig and the textures. Still havent figured out a way to export a minimal file like just the animation... 
 
 --- 
 

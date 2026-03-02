@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu"; 
 import { GLTFLoader, OrbitControls } from "three/examples/jsm/Addons.js"; 
-import { BindingHandler, setupTracker } from "three-mediapipe-rig"; 
+import { BindingHandler, RecordableBindingHandler, setupTracker } from "three-mediapipe-rig"; 
 import Stats from "three/examples/jsm/libs/stats.module.js";
 
 // — Renderer —
@@ -73,25 +73,13 @@ await Promise.all([renderer.init(), setupTracker({ ignoreLegs:true, debugVideo: 
 		camera.zoom = DEFAULT_CAMERA.zoom
 		camera.updateProjectionMatrix()
 		ctrl.update()
-		ctrl.update()
+		ctrl.update() 
 
-		// window.addEventListener("keydown", ev=>{ 
-		// 	if( ev.code === "Space" ){
-		// 		const settings = {
-		// 			position: camera.position.toArray(),
-		// 			target: ctrl.target.toArray(),
-		// 			zoom: camera.zoom,
-		// 		}
-		// 		navigator.clipboard.writeText(JSON.stringify(settings, null, 2))
-		// 		//tracker.start()
-		// 	}
-		// }) 
+		let laraBind:RecordableBindingHandler|undefined;
+		let headBind:RecordableBindingHandler|undefined;
+		let tigerBind:RecordableBindingHandler|undefined;
 
-		let laraBind:BindingHandler|undefined;
-		let headBind:BindingHandler|undefined;
-		let tigerBind:BindingHandler|undefined;
-
-		scene.add( tracker.handsTracker.left.root)
+		//scene.add( tracker.handsTracker.left.root)
 
         // — Handle resize —
         window.addEventListener("resize", () => {
@@ -100,7 +88,34 @@ await Promise.all([renderer.init(), setupTracker({ ignoreLegs:true, debugVideo: 
             renderer.setSize(window.innerWidth, window.innerHeight);
         }); 
 
-		new GLTFLoader().load(import.meta.env.BASE_URL +"sample.glb", (gltf) => {
+		let replayRecording = false
+
+		replayRecording && new GLTFLoader().load(import.meta.env.BASE_URL +"sample.glb", (gltf)=>{
+			scene.add(gltf.scene);
+
+			const rig = gltf.scene.getObjectByName("rig")!; 
+
+			new GLTFLoader().load(import.meta.env.BASE_URL +"RecordedClip.glb", (gltf2)=>{
+
+				const mixer = new THREE.AnimationMixer(rig);
+				const clip = gltf2.animations[0];
+				 
+				const action = mixer.clipAction(clip);  
+
+				action.play(); 
+
+				let clock = new THREE.Timer() 
+				renderer.setAnimationLoop((time:number) => { 
+					const delta = clock.update(time).getDelta(); 
+					mixer.update(delta); 
+					renderer.render(scene, camera);
+				});
+
+			});
+			
+		});
+
+		!replayRecording && new GLTFLoader().load(import.meta.env.BASE_URL +"sample.glb", (gltf) => {
 			scene.add(gltf.scene);
 
 			scene.traverse((child) => {
@@ -131,6 +146,30 @@ await Promise.all([renderer.init(), setupTracker({ ignoreLegs:true, debugVideo: 
  
 			
 			tigerBind = tracker.bind( tigerRig ) ;  
+
+			// the line below starts and stops a recording pressing SPACE key
+
+			let rec = false;
+			window.addEventListener("keydown", ev=>{ 
+				if( ev.code === "Space" ){
+					// const settings = {
+					// 	position: camera.position.toArray(),
+					// 	target: ctrl.target.toArray(),
+					// 	zoom: camera.zoom,
+					// }
+					// navigator.clipboard.writeText(JSON.stringify(settings, null, 2))
+					// //tracker.start()
+					if(!rec) {
+						rec = true;
+						laraBind?.startRecording()
+					}
+					else {
+						rec = false;
+						const op = laraBind?.stopRecording()
+						op?.saveToFile()
+					}
+				}
+			}) 
 			
 		})	 
  

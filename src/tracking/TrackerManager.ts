@@ -9,6 +9,7 @@ import { loadPoseTracker } from "./PoseTracker";
 import { loadHandTracker } from "./HandTracker"; 
 import { loadFaceTracker } from "./FaceTracker";
 import { BoneMap, defaultBoneMap } from "./BoneMapping";
+import { createRigRecorder } from "./recoding/recorder";
 
 export type TrackerConfig = {
     /**
@@ -50,8 +51,35 @@ export type TrackerConfig = {
 };
 
 export interface BindingHandler {
+
+	/**
+	 * Updates the rig with the latest landmarks.
+	 * @param delta The time elapsed since the last frame in seconds.
+	 */
     update: (delta: number) => void;
+
 }
+
+export interface RecorderHandler { 
+	/**
+	 * Starts recording the rig's movement and active shape keys ( from media pipe ).
+	 */
+	startRecording: VoidFunction;
+
+	/**
+	 * Stops recording the rig's movement.
+	 * @returns A function that can be called to SAVE the recording to a file.
+	 */
+	stopRecording: ReturnType<typeof createRigRecorder>['stop'];
+
+	/**
+	 * Checks if the rig is currently recording.
+	 * @returns True if the rig is recording, false otherwise.
+	 */
+	isRecording: () => boolean;
+}
+
+export interface RecordableBindingHandler extends BindingHandler, RecorderHandler {}
 
 // Check if webcam access is supported.
 const hasGetUserMedia = () => !!navigator.mediaDevices?.getUserMedia;
@@ -319,15 +347,30 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
                 }
             });
 
+			const recorder = createRigRecorder(rig, magging)
+
             return {
+
+				/**
+				 * Will save the tracked movement of the rig to an animation clip.
+				 * Only the bones moved by the bone mapping will be recorded.
+				 */
+				startRecording: recorder.start,
+				stopRecording: recorder.stop,
+				isRecording: () => recorder.isRecording(),
+
                 update: (delta: number) => {
                     bodyBindin.update(delta);
                     leftHandBinding.update(delta);
                     rightHandBinding.update(delta);
                     faceKeys?.update(delta);
                     faceRig?.update(delta);
+
+					if( recorder.isRecording() ) {
+						recorder.captureFrame()
+					}
                 },
-            } as BindingHandler;
+            } as RecordableBindingHandler;
         },
     };
 }
