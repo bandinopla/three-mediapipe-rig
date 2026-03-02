@@ -35,11 +35,15 @@ const poseMarks = {
 			neck: [12,11],
 			leftLeg: 23,
 			leftKnee:25,
+			leftFoot: 27,
+			leftToes: 31,
 			leftArm: 11,
 			leftElbow: 13,
 			leftWrist: 15,
 			rightLeg: 24,
 			rightKnee: 26,
+			rightFoot: 28,
+			rightToes: 32,
 			rightArm: 12,
 			rightElbow: 14,
 			rightWrist: 16, 
@@ -139,15 +143,21 @@ class PoseTracker extends Tracker<typeof poseMarks> {
 			"torso": getBoneByName(rig, magging.torso),
 			"leftLeg": getBoneByName(rig, magging.thighL),
 			"leftKnee": getBoneByName(rig, magging.shinL),
+			"leftFoot": getBoneByName(rig, magging.footL),
 			"rightLeg": getBoneByName(rig, magging.thighR),
 			"rightKnee": getBoneByName(rig, magging.shinR),
+			"rightFoot": getBoneByName(rig, magging.footR),
 		} 
 
 		if( this.config?.ignoreLegs ){
 			delete map.leftLeg
 			delete map.leftKnee
+			delete map.leftFoot
+			delete map.leftToes
 			delete map.rightLeg
 			delete map.rightKnee
+			delete map.rightFoot
+			delete map.rightToes
 		}
 
 		const v = new THREE.Vector3();
@@ -185,11 +195,15 @@ class PoseTracker extends Tracker<typeof poseMarks> {
 
 				syncBone(delta, map.leftArm, "leftArm", "leftElbow", sideShoulders, "-x")
 				syncBone(delta, map.leftElbow, "leftElbow", "leftWrist", sideShoulders, "-x")
-				syncBone(delta, map.leftLeg, "leftLeg", "leftKnee", sideHips, "-x") 
+				syncBone(delta, map.leftLeg, "leftLeg", "leftKnee", sideHips, "+x") 
+				syncBone(delta, map.leftKnee, "leftKnee", "leftFoot", sideHips, "+x") 
+				syncBone(delta, map.leftFoot, "leftFoot", "leftToes", sideHips, "+x") 
 
 				syncBone(delta, map.rightArm, "rightArm", "rightElbow", sideShoulders, "-x")
 				syncBone(delta, map.rightElbow, "rightElbow", "rightWrist", sideShoulders, "-x")
-				syncBone(delta, map.rightLeg, "rightLeg", "rightKnee", sideHips, "-x") 
+				syncBone(delta, map.rightLeg, "rightLeg", "rightKnee", sideHips, "+x") 
+				syncBone(delta, map.rightKnee, "rightKnee", "rightFoot", sideHips, "+x") 
+				syncBone(delta, map.rightFoot, "rightFoot", "rightToes", sideHips, "+x") 
 				
 			}
 		}

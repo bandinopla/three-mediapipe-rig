@@ -16,10 +16,12 @@ export type BoneMap = {
 	thighL:string
 	shinL:string
 	footL:string
+	toesL:string
 
 	thighR:string
 	shinR:string
 	footR:string
+	toesR:string
 	 
 	
 	handL:string

@@ -3,9 +3,13 @@
 
 # three-mediapipe-rig
 
-Integrate [Google MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/guide) motion tracking with [Three.js](https://threejs.org/) skeletal rigs. Load a GLTF/GLB character, bind it, and drive its body, hands, and face from a webcam or video — in just a few lines of code.
+Integrate [Google MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/guide)'s **webcam motion tracking** with [Three.js](https://threejs.org/) skeletal rigs. Load a GLTF/GLB character, bind it, and drive its body, hands, and face from a webcam or video — in just a few lines of code.
+
+Use your webcam ( or a video ) to drive a skeleton.
 
 This will run 3 models: face, body, hands. So expect a FPS drop.
+
+LIVE EXAMPLE: https://bandinopla.github.io/three-mediapipe-rig/
 
 ## Features
 
