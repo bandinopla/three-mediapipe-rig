@@ -1,6 +1,6 @@
 {
   "name": "three-mediapipe-rig",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "type": "module",
   "description": "Easy setup of a skeletal rig that responds to the motion tracker provided by google's mediapipe webwam feed.",
   "repository": {
