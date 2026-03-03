@@ -16,7 +16,7 @@ renderer.shadowMap.enabled = true;
 const stats = new Stats();
 document.body.appendChild(stats.dom);
 
-await Promise.all([renderer.init(), setupTracker({ ignoreLegs:true, debugVideo: import.meta.env.BASE_URL + "webcam4.mp4", displayScale:1  }) ]).then(
+await Promise.all([renderer.init(), setupTracker({ /*debugFrame:import.meta.env.BASE_URL +"videoframe_3974.png",*/ debugVideo: import.meta.env.BASE_URL + "webcam4.mp4", displayScale:1  }) ]).then(
     ([renderer, tracker]) => {
         // — Scene —
         const scene = new THREE.Scene();
@@ -79,7 +79,9 @@ await Promise.all([renderer.init(), setupTracker({ ignoreLegs:true, debugVideo: 
 		let headBind:RecordableBindingHandler|undefined;
 		let tigerBind:RecordableBindingHandler|undefined;
 
-		//scene.add( tracker.handsTracker.left.root)
+		//const leftHandMarks = tracker.handsTracker.right.root
+		//scene.add( leftHandMarks)
+ 
 
         // — Handle resize —
         window.addEventListener("resize", () => {

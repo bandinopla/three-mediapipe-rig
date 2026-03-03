@@ -32,8 +32,14 @@ export async function loadHandTracker(vision: any, config:HandsTrackerConfig ) {
     });
 
 	const isMyWrist = ( myWrist:()=>NormalizedLandmark, otherWrist:()=>NormalizedLandmark, handWrist:NormalizedLandmark ) => {
-		A.copy(myWrist());
-		B.copy(otherWrist());
+
+		try{
+			A.copy(myWrist());
+			B.copy(otherWrist());
+		}catch(e){
+			console.warn("No pose data... will just be optimitic and say yes to everything.", e);
+			return true;
+		}
 		return A.distanceTo(handWrist) < B.distanceTo(handWrist);
 	}
 
@@ -93,6 +99,7 @@ const v3 = new THREE.Vector3();
 const v4 = new THREE.Vector3();
 const v5 = new THREE.Vector3();
 const v6 = new THREE.Vector3();
+const v7 = new THREE.Vector3();
 
 const currNormal = new THREE.Vector3();
 const currForward = new THREE.Vector3();
@@ -114,7 +121,7 @@ class HandsTracker extends Tracker<typeof handMarks> {
 		this.sign = this.side=="Left" ? -1 : 1;
 		this.isLeft = this.side=="Left";
 		this.lookAtPoleAxis = this.sign<0? "+x" : "-x";
-		this.root.scale.setScalar(2)
+		this.root.scale.setScalar(7)
 		this.root.scale.y *= -1
 		this.root.scale.z *= -1
 	}
@@ -175,6 +182,9 @@ class HandsTracker extends Tracker<typeof handMarks> {
 			return;
 		}
 
+		//
+		// positioning of the palm's bone
+		//
 		if( markToBone.wrist )
 		{
 			const palmLookAt = rootPosition(v4, markToBone.wrist, rig ).add( parlmDir ).applyMatrix4(rig.matrixWorld) //markToBone.wrist.getWorldPosition(v4).add( parlmDir );
@@ -187,17 +197,14 @@ class HandsTracker extends Tracker<typeof handMarks> {
 
 			palmGhost.lerp(markToBone.wrist, delta)
 		}
-		
 
 		// palmLookAtOffset.normalize();
-
-		 
 		// const palmSide = v3.crossVectors(palmNormal, palmLookAtOffset).normalize();
  
 		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.index, "middle1" )
 		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.middle, "ring1" )
 		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.ring, "pinky1" )
-		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.pinky, "ring1"  )
+		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.pinky, "ring1", true  )
 
 		// //thumb...
 		this.syncFinger( delta, rig, palmNormal, parlmDir, palmSide, markToBone, fingerKeys.thumb, "index1"  )
@@ -216,35 +223,45 @@ class HandsTracker extends Tracker<typeof handMarks> {
 
 			if(!bone ) continue;
 
-			const myDir = v4.copy( this.marks[fingerKeys[i+1]].worldPosition ).sub( this.marks[fingerKeys[i]].worldPosition).normalize();  
-			
-			const bonePos = rootPosition(v5, bone, rig) //bone.getWorldPosition(v5);
-			const poleOffset = v6.copy(bonePos).add(palmSide) //rootPosition(v6, bonePole, rig).sub( bonePos );//bonePole.getWorldPosition(v6).sub( bonePos );
-
-			if( negateSideGoal ) poleOffset.negate();
-
 			const fingerGhost = this.getGhost(bone)
+
+			// finger's direction
+			const myDir = v4.copy( this.marks[fingerKeys[i+1]].worldPosition ).sub( this.marks[fingerKeys[i]].worldPosition).normalize() ;  
+			
+			const bonePos = rootPosition(v5, bone, rig) //bone.getWorldPosition(v5); 
+
+
+			//const poleOffset = v6.copy(bonePos).add(palmSide) //rootPosition(v6, bonePole, rig).sub( bonePos );//bonePole.getWorldPosition(v6).sub( bonePos );
+
+			//if( negateSideGoal ) poleOffset.negate(); 
 
 
 			if( i==0 )
 			{  
+				const fingerSideNormal = v6.copy(this.marks[sideGoal].worldPosition).sub(this.marks[fingerKeys[0]].worldPosition).normalize() ;
+ 
+				if( negateSideGoal )
+					fingerSideNormal.negate();
+ 
 
-				currSide.copy(poleOffset);
+				// if( this.isLeft )
+				// 	sideDir.negate();
+
+				currSide.copy(fingerSideNormal);
 
 				
 				lookAt( fingerGhost, 
 					myDir.add( bonePos ).applyMatrix4(rig.matrixWorld), 
-					poleOffset.add(bonePos).applyMatrix4(rig.matrixWorld), 
-					this.lookAtPoleAxis );
+					fingerSideNormal.add(bonePos).applyMatrix4(rig.matrixWorld), 
+					this.lookAtPoleAxis ); 
 
 				
 			}
 			else 
 			{ 
-				poleOffset.copy( currSide );
 				lookAt( fingerGhost, 
 					myDir.add( bonePos ).applyMatrix4(rig.matrixWorld), 
-					poleOffset.add(bonePos).applyMatrix4(rig.matrixWorld), 
+					v6.copy(currSide).add(bonePos).applyMatrix4(rig.matrixWorld), 
 					this.lookAtPoleAxis );
 			} 
 
@@ -270,6 +287,7 @@ class HandsTracker extends Tracker<typeof handMarks> {
 
 			if( bone ){
 				map[markName] = bone;
+				return markName;
 			}
 		}
 

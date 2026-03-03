@@ -193,7 +193,7 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
         img.style.position = "absolute";
         img.style.top = "0px";
         img.style.left = "0px";
-        document.body.appendChild(img);
+		viewport.appendChild(img);
 
         img.addEventListener("load", () => {
             img.width = img.naturalWidth * $cfg.displayScale;
@@ -205,6 +205,7 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
 
             function predictFrame() {
                 predict(img);
+				//window.requestAnimationFrame(predictFrame);
             }
 
             window.requestAnimationFrame(predictFrame);
