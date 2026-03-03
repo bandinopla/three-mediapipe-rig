@@ -1,11 +1,11 @@
 
 ![cover](cover.jpg)
 
-# three-mediapipe-rig
+# Control a skeleton with the webcam
 
-Integrate [Google MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/guide)'s **webcam motion tracking** with [Three.js](https://threejs.org/) skeletal rigs. Load a GLTF/GLB character, bind it, and drive its body, hands, and face from a webcam or video — in just a few lines of code.
+Integrate [Google MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/guide)'s **webcam motion tracking** with [Three.js](https://threejs.org/) skeletal rigs. 
 
-Use your webcam ( or a video ) to drive a skeleton.
+The motion from the webcam will be applied to a skeleton. Angle based so it works with any size skeleton. 
 
 This will run 3 models: face, body, hands. So expect a FPS drop.
 
@@ -52,41 +52,32 @@ npm install three-mediapipe-rig
 
 ## Quick Start
 
-```ts
-// 1. Create your renderer
-const renderer = new THREE.WebGPURenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+```ts 
 
-// 2. Initialize the tracker (loads MediaPipe models)
+// 1. Initialize the tracker (loads MediaPipe models)
 await setupTracker({ ...config... })
  
 const rig = scene.getObjectByName("rig")!;
 
-// 3. Bind the rig to the tracker
+// 2. Bind the rig to the tracker
 const binding = tracker.bind(rig);
  
 
-// 4. Start the webcam ( must be initialized by a user triggered event like a click )
-tracker.start();
+// 3. Start the webcam ( must be initialized by a user triggered event like a click )
+button.addEventListener('click', () => {
+    tracker.start(); //<-- will ask webcam access!
+})
 
-// 5. Update in your render loop
-const clock = new THREE.Timer();
-renderer.setAnimationLoop((time: number) => {
-  const delta = clock.update(time).getDelta();
 
-  // 6. update the skeleton...
-  binding?.update(delta);
-
-  renderer.render(scene, camera);
-});
+// 4. Update the rig in your render loop ( this keels the skeleton in-sync)
+binding?.update(delta);
 ```
 
 ### Skeleton
-You can use the skeleton provided in `rig.blend` or use your own and provide a bone name mapping so we know where the bones are in the second argument for the `.bind` method. But pay attention to the bone role of the provided skeleton, as it is the one expected by this module.
+You can use the skeleton provided in `rig.blend` or use your own and provide a bone name mapping so we know where the bones are in the second argument for the `.bind` method. But pay attention to the [**bone roll**](https://docs.blender.org/manual/en/latest/animation/armatures/bones/editing/bone_roll.html) of the provided skeleton, as it is the one expected by this module.
 
 ### Facial Animation
-Media Pipe provides blend shape keys for the face ( estimated from the webcam ). The face it is expected to be a separated mesh, just the face, with blend shape keys named as the ones provided by Media Pipe. See [Blend Shape Keys reference](/face-blendshapekeys.md) You don't have to have all of them, if they are not found, they will be ignored.
+Media Pipe provides blend shape keys for the face ( estimated from the webcam ). The face it is expected to be a separated mesh with a name that starts with "face", with blend shape keys named as the ones provided by Media Pipe. See [Blend Shape Keys reference](/face-blendshapekeys.md) You don't have to have all of them, if they are not found, they will be ignored.
 
 
 ## API
