@@ -15,6 +15,7 @@ export type HandsTrackerConfig = {
 	leftWrist: ()=>NormalizedLandmark;
 	rightWrist: ()=>NormalizedLandmark;
 	modelPath?:string
+	drawLandmarks?:boolean
 } & Partial<HandLandmarkerOptions>;
 
 const A = new THREE.Vector2();
@@ -44,8 +45,8 @@ export async function loadHandTracker(vision: any, config:HandsTrackerConfig ) {
 	}
 
     return {
-		left:new HandsTracker(landmarker, "Left", isMyWrist.bind(null, config.leftWrist, config.rightWrist) ),
-		right:new HandsTracker(landmarker, "Right", isMyWrist.bind(null, config.rightWrist, config.leftWrist) )
+		left:new HandsTracker(landmarker, "Left", isMyWrist.bind(null, config.leftWrist, config.rightWrist), config.drawLandmarks ),
+		right:new HandsTracker(landmarker, "Right", isMyWrist.bind(null, config.rightWrist, config.leftWrist), config.drawLandmarks )
 	};
 }
 
@@ -115,7 +116,7 @@ class HandsTracker extends Tracker<typeof handMarks> {
 	 */
 	private readonly lookAtPoleAxis:LookAtPoleAxis;
 
-	constructor(private readonly handLandmarker:HandLandmarker, private readonly side:HandSide, private readonly isMyWrist:( handWrist:NormalizedLandmark )=>boolean ){
+	constructor(private readonly handLandmarker:HandLandmarker, private readonly side:HandSide, private readonly isMyWrist:( handWrist:NormalizedLandmark )=>boolean, private drawLandmarks = true ){
 		super(handMarks, HandLandmarker.HAND_CONNECTIONS)
 
 		this.sign = this.side=="Left" ? -1 : 1;
@@ -141,12 +142,15 @@ class HandsTracker extends Tracker<typeof handMarks> {
 				if( isMyWrist ){
 					this.updateLandmarks( result.worldLandmarks[i] );
 
-					drawingUtils.drawConnectors(hand, HandLandmarker.HAND_CONNECTIONS, {
-						color: this.side=="Left" ? "#00FF00" : "#0000FF",
-						lineWidth: 4
-					});
-					drawingUtils.drawLandmarks(hand, { color: this.side=="Left" ? "#00FF00" : "#0000FF", lineWidth: 3, radius: 1 }); 
-
+					if( this.drawLandmarks )
+					{
+						drawingUtils.drawConnectors(hand, HandLandmarker.HAND_CONNECTIONS, {
+							color: this.side=="Left" ? "#00FF00" : "#0000FF",
+							lineWidth: 4
+						});
+						drawingUtils.drawLandmarks(hand, { color: this.side=="Left" ? "#00FF00" : "#0000FF", lineWidth: 3, radius: 1 });  
+					}
+					
 					
 					break;
 				}

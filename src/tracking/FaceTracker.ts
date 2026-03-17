@@ -1,15 +1,23 @@
 import {
     Category,
     DrawingUtils,
-    FaceLandmarker
+    FaceLandmarker,
+	NormalizedLandmark
 } from "@mediapipe/tasks-vision";
-import { Mesh, Object3D, Vector3 } from "three/webgpu";
+import { BufferAttribute, Mesh, Object3D, Vector3, Node, VideoTexture, SRGBColorSpace, MeshPhysicalNodeMaterial } from "three/webgpu";
 import { Tracker } from "./Tracker";
 import { rootPosition } from "./util/getRootPosition";
 import { getBoneByName } from "./util/getBoneByName";
 import { lookAt } from "./util/lookAt";
+import { attribute, instancedArray, mix, texture, uniform, varying, vec2, vec2, vec3 } from "three/tsl";
 
-export async function loadFaceTracker(vision: any, cfg?: { modelPath?: string }) {
+export type FaceTrackerConfig = {
+	modelPath?: string,
+	videoElementRef?:()=>HTMLVideoElement,
+	drawLandmarks?:boolean
+}
+
+export async function loadFaceTracker(vision: any, cfg?: FaceTrackerConfig ) {
     const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
             modelAssetPath: cfg?.modelPath ?? "face_landmarker.task",
@@ -20,7 +28,7 @@ export async function loadFaceTracker(vision: any, cfg?: { modelPath?: string })
 		numFaces: 1,
     });
 
-	return new FaceTracker(faceLandmarker);
+	return new FaceTracker(faceLandmarker, { ...cfg});
 }
 
 /**
@@ -56,8 +64,9 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 	private blendshapeMap: Map<string, number> = new Map();
 	private smoothed: Record<string, number> = {};
 	private smoothing =.0003; // lower = smoother but more lag, higher = more responsive
+	private _faceLandmarks: NormalizedLandmark[] = [];
 
-	constructor(private faceLandmarker: FaceLandmarker) {
+	constructor(private faceLandmarker: FaceLandmarker, private cfg:FaceTrackerConfig) {
 		super(faceMarks, FaceLandmarker.FACE_LANDMARKS_TESSELATION)
 
 		this.root.scale.y*=-1
@@ -68,11 +77,16 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 	override predict(frame: TexImageSource, drawingUtils: DrawingUtils) {
 		const result = this.faceLandmarker.detectForVideo(frame, performance.now());
 		if (result.faceLandmarks[0]) {
-			drawingUtils.drawConnectors(result.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: "#00fff2ff", lineWidth: .1 });
-			drawingUtils.drawLandmarks(result.faceLandmarks[0], { color: "#00ff00", lineWidth: .1, radius: .4 });	
+
+			if( this.cfg.drawLandmarks ){
+				drawingUtils.drawConnectors(result.faceLandmarks[0], FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: "#00fff2ff", lineWidth: .1 });
+				drawingUtils.drawLandmarks(result.faceLandmarks[0], { color: "#00ff00", lineWidth: .1, radius: .4 });	
+			}
 
 			this.updateLandmarks(result.faceLandmarks[0], result.faceLandmarks[0] );
 		}
+
+		this._faceLandmarks = result.faceLandmarks[0];
 
 		this.blendshapeCategories = result.faceBlendshapes?.[0]?.categories; 
 
@@ -80,6 +94,10 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 			this.blendshapeMap.set(category.categoryName, category.score);
 		});
 		
+	}
+
+	get lastKnownLandmarks() {
+		return this._faceLandmarks;
 	}
 
 	bindShapeKeys(mesh: Mesh) {
@@ -141,6 +159,107 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 				// headLookAtPos.applyMatrix4(rig.matrixWorld);
 				//headBone.lookAt( headLookAtPos );
 				// 
+			}
+		}
+		
+	}
+
+	/**
+	 * The mesh is assumed to be a canonical_face_model because we will be manipulating it's vertices.
+	 * 
+	 * @see https://github.com/google-ai-edge/mediapipe/tree/master/mediapipe/modules/face_geometry
+	 * @param mesh basically either the original or a clone of the canonical_face_model
+	 */
+	bindGeometry( mesh:Mesh, setupTheMaterialYourself?:( posNode:Node, colorNode:Node )=>void )
+	{ 
+		const A = new Vector3();
+		const B = new Vector3();
+
+		const geometry = mesh.geometry;
+        const posAttr = geometry.attributes.position; 
+
+        // Build a map from unique positions to the first vertex index that has that position.
+        // The canonical face mesh has 468 landmarks (+ iris vertices). Three.js may duplicate 
+        // vertices for normals/UV seams, so vertex index != landmark index.
+        // We find unique positions in order of first appearance, which preserves the 
+        // original canonical landmark ordering (0..467).
+        const uniquePositions: number[] = []; // uniquePositions[landmarkIdx] = geometry vertex index
+        const seen = new Map<string, number>(); // position key -> landmark index
+		const posIndex2LandmarkIndex : number[] = []; // position index -> landmark index
+
+        for (let i = 0; i < posAttr.count; i++) {
+            const key = `${posAttr.getX(i).toFixed(6)},${posAttr.getY(i).toFixed(6)},${posAttr.getZ(i).toFixed(6)}`;
+            if (!seen.has(key)) {
+                seen.set(key, uniquePositions.length);
+                uniquePositions.push(i); // the first vertex index for this unique position
+            }
+			posIndex2LandmarkIndex.push(seen.get(key)!);
+        }
+
+		//console.log(`Canonical mesh: ${posAttr.count} vertices, ${uniquePositions.length} unique positions`);
+		const center = uniform(new Vector3(0.5, 0.5, 0.5));
+
+		geometry.setAttribute("landmarkIndex", new BufferAttribute(new Uint16Array(posIndex2LandmarkIndex), 1));
+		const landmarkIndexAttr = attribute("landmarkIndex", "uint");
+		const landmarkStore = instancedArray(468, "vec3");
+
+		const sampleUV = varying( landmarkStore.element(landmarkIndexAttr) ).xy;
+		let video:HTMLVideoElement|undefined;
+
+		return {
+			update: ( delta:number ) => {
+				if( !video )
+				{
+					video = this.cfg?.videoElementRef?.();
+					if (!video) return;
+
+					const tex = new VideoTexture(video); 
+						  tex.colorSpace = SRGBColorSpace;
+
+					// ionitialize material
+					const positionNode = landmarkStore.element(landmarkIndexAttr).sub(center).xzy.mul(vec3(1.3,-1.1,1));
+					const colorNode = texture(tex, vec2( sampleUV.x, sampleUV.y.oneMinus()));
+
+					if( setupTheMaterialYourself )
+					{
+						setupTheMaterialYourself(positionNode, colorNode);
+					}
+					else 
+					{
+						mesh.material = new MeshPhysicalNodeMaterial({  
+
+							positionNode,
+							colorNode,
+							roughness:0.93
+
+						});
+					}
+				}
+
+				const landmarks = this.lastKnownLandmarks;
+				if( !landmarks ) return;
+
+				const data = landmarkStore.value.array ;
+
+				for (let i = 0; i < landmarks.length; i++) {
+					data[i * 3] = landmarks[i].x;
+					data[i * 3 + 1] = landmarks[i].y;
+					data[i * 3 + 2] = landmarks[i].z;
+				}
+
+				landmarkStore.value.needsUpdate = true;
+
+				//// calculate face center point
+				const A1 = landmarks[234];
+				const A2 = landmarks[93];
+				const B1 = landmarks[454];
+				const B2 = landmarks[323];
+
+				A.copy( A1 ).sub(A2).divideScalar(2).add(A2);
+				B.copy( B1 ).sub(B2).divideScalar(2).add(B2);
+
+				center.value.subVectors(B, A).divideScalar(2).add(A);
+				center.needsUpdate = true;  
 			}
 		}
 		

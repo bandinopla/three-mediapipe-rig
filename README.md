@@ -9,8 +9,10 @@ The motion from the webcam will be applied to a skeleton. Angle based so it work
 
 This will run 3 models: face, body, hands. So expect a FPS drop.
 
-LIVE EXAMPLE: https://bandinopla.github.io/three-mediapipe-rig/
-
+Expolore the demos:
+- [Characters](https://bandinopla.github.io/three-mediapipe-rig) 
+- [Hands Demo](https://bandinopla.github.io/three-mediapipe-rig/?demo=hands)
+- [Video to Face Geometry](https://bandinopla.github.io/three-mediapipe-rig/?demo=face-uv-demo)
 ---
 
 ## Table of Contents
@@ -26,6 +28,7 @@ LIVE EXAMPLE: https://bandinopla.github.io/three-mediapipe-rig/
 - [Bone Naming](#bone-naming)
   - [Default bone names](#default-bone-names)
   - [Custom bone map example](#custom-bone-map-example)
+- [Video -> Facial Geometry](#video-to-facial-geometry)
 - [Multiple Characters](#multiple-characters)
 - [Debugging with Video](#debugging-with-video)
 - [Recording](#recording)
@@ -221,11 +224,18 @@ const myBoneMap: BoneMap = {
   index3L: "LeftHandIndex3",
   // (continue for all fingers)
 };
-
-const binding = tracker.bind(rig, myBoneMap);
 ```
+ 
 
----
+## Video to Facial Geometry
+Media Pipe's facial tracking also provides a facial mesh, if you [download the face mesh object](https://github.com/google-ai-edge/mediapipe/tree/master/mediapipe/modules/face_geometry) you can also make it deform and be textured using the webcam data. This will texture the mesh with the feed from the camera and also will move the vertices to adjust to the facial expressions:
+
+```js
+const face = tracker.faceTracker.bindGeometry( faceMesh );
+
+//... and in your loop
+face.update(delta)
+``` 
 
 ## Multiple Characters
 

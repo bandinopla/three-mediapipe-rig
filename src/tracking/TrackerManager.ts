@@ -38,6 +38,11 @@ export type TrackerConfig = {
     ignoreFace: boolean;
 
     /**
+     * Only track the face
+     */
+    onlyFace: boolean;
+
+    /**
      * @see https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker/web_js#configuration_options
      */
     handsTrackerOptions: HandLandmarkerOptions | undefined;
@@ -48,6 +53,11 @@ export type TrackerConfig = {
 		hand?: string;
 		face?: string;
 	}
+
+	/**
+	 * Draw the wireframe landmarks on top of the source image/video? ( default to true )
+	 */
+	drawLandmarksOverlay?:boolean
 };
 
 export interface BindingHandler {
@@ -91,6 +101,8 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
         ignoreLegs: false,
         debugVideo: undefined,
         ignoreFace: false,
+		onlyFace: false,
+		drawLandmarksOverlay:true,
 		modelPaths: {
 			vision: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm",
 			pose: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
@@ -101,19 +113,21 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
     };
     let video: HTMLVideoElement | undefined;
     const vision = await FilesetResolver.forVisionTasks( $cfg.modelPaths.vision ?? "/wasm" );
-    const poseTracker = await loadPoseTracker(vision, {
+    const poseTracker = $cfg.onlyFace ? undefined : await loadPoseTracker(vision, {
         ignoreLegs: $cfg.ignoreLegs,
 		modelPath: $cfg.modelPaths.pose!,
+		drawLandmarks: $cfg.drawLandmarksOverlay,
     });
-    const handsTracker = await loadHandTracker(vision, {
-        leftWrist: () => poseTracker.leftWristNormalizedPosition,
-        rightWrist: () => poseTracker.rightWristNormalizedPosition,
+    const handsTracker = $cfg.onlyFace ? undefined : await loadHandTracker(vision, {
+        leftWrist: () => poseTracker!.leftWristNormalizedPosition,
+        rightWrist: () => poseTracker!.rightWristNormalizedPosition,
 		modelPath: $cfg.modelPaths.hand!,
+		drawLandmarks: $cfg.drawLandmarksOverlay,
         ...config?.handsTrackerOptions,
     });
     const faceTracker = $cfg.ignoreFace
         ? undefined
-        : await loadFaceTracker(vision, { modelPath: $cfg.modelPaths.face! });
+        : await loadFaceTracker(vision, { modelPath: $cfg.modelPaths.face!, videoElementRef:()=>video, drawLandmarks: $cfg.drawLandmarksOverlay });
 
     //#region setup Camera and Canvas...
 	const viewport = document.createElement("div");
@@ -222,6 +236,7 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
         handsTracker,
         faceTracker,
         video,
+		canvas: canvasElement,
 
 		/**
 		 * A div that contains the video and canvas used to display the landmarks stacked on top of each other.
@@ -332,6 +347,10 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
 
 			magging = magging || defaultBoneMap;
 
+			if(!poseTracker) throw new Error("Pose tracker not initialized");
+			if(!handsTracker) throw new Error("Hands tracker not initialized");
+			if(!faceTracker) throw new Error("Face tracker not initialized");
+
             const bodyBindin = poseTracker.bind(rig, magging);
             const leftHandBinding = handsTracker.left.bind(rig, magging);
             const rightHandBinding = handsTracker.right.bind(rig, magging);
@@ -375,3 +394,5 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
         },
     };
 }
+
+export type TrackerHandler = Awaited<ReturnType<typeof setupTracker>>;

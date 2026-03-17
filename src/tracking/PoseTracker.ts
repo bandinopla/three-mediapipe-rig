@@ -69,6 +69,7 @@ const poleGoal = new THREE.Vector3();
 type PoseTrackerConfig = {
 	ignoreLegs:boolean
 	modelPath:string
+	drawLandmarks?:boolean
 }
 
 /**
@@ -105,7 +106,7 @@ class PoseTracker extends Tracker<typeof poseMarks> {
 				return;
 			}
   
-			this.updateLandmarks( result.worldLandmarks[0], result.landmarks[0],  drawingUtils );
+			this.updateLandmarks( result.worldLandmarks[0], this.config?.drawLandmarks===false ? undefined : result.landmarks[0],  drawingUtils );
 
 			
 			this._leftWristNormalizedPosition = result.landmarks[0][ this.points.leftWrist ];
