@@ -33,6 +33,7 @@ export async function loadFaceTracker(vision: any, cfg?: FaceTrackerConfig ) {
 
 /**
  * @see https://storage.googleapis.com/mediapipe-assets/documentation/mediapipe_face_landmark_fullsize.png
+ * @see https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/modules/face_geometry/data/canonical_face_model_uv_visualization.png
  */
 const faceMarks = {
 	eyeL: 473,
@@ -174,6 +175,8 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 	{ 
 		const A = new Vector3();
 		const B = new Vector3();
+		const C = new Vector3();
+		const D = new Vector3();
 
 		const geometry = mesh.geometry;
         const posAttr = geometry.attributes.position; 
@@ -206,18 +209,35 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 		const sampleUV = varying( landmarkStore.element(landmarkIndexAttr) ).xy;
 		let video:HTMLVideoElement|undefined;
 
+		const scaleRefIndexA = 116;
+		const scaleRefIndexB = 346;
+
+		const meshFaceReference = C.subVectors(
+			new Vector3(posAttr.getX(scaleRefIndexA), posAttr.getY(scaleRefIndexA), posAttr.getZ(scaleRefIndexA)),
+			new Vector3(posAttr.getX(scaleRefIndexB), posAttr.getY(scaleRefIndexB), posAttr.getZ(scaleRefIndexB))
+		).lengthSq(); 
+
+		const geometryScaleReference = uniform(meshFaceReference);
+		const landmarkScaleReference = uniform(1); // will be calculated below.
+		const ratio = uniform(1);
+
 		return {
 			update: ( delta:number ) => {
 				if( !video )
 				{
-					video = this.cfg?.videoElementRef?.();
-					if (!video) return;
+					const currentVideo = this.cfg?.videoElementRef?.();
+					if (!currentVideo || !currentVideo.videoWidth || !currentVideo.videoHeight) return;
+					video = currentVideo;
 
 					const tex = new VideoTexture(video); 
 						  tex.colorSpace = SRGBColorSpace;
 
+					const videoRatio = video.videoWidth / video.videoHeight; 
+					
 					// ionitialize material
-					const positionNode = landmarkStore.element(landmarkIndexAttr).sub(center).xzy.mul(vec3(1.3,-1.1,1));
+					const positionNode = landmarkStore.element(landmarkIndexAttr).sub(center).xzy.mul(vec3( 1,-1,1/videoRatio)).mul(ratio);
+
+
 					const colorNode = texture(tex, vec2( sampleUV.x, sampleUV.y.oneMinus()));
 
 					if( setupTheMaterialYourself )
@@ -237,14 +257,24 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 				}
 
 				const landmarks = this.lastKnownLandmarks;
-				if( !landmarks ) return;
+				if( !landmarks?.length ) return; 
+				
+
+				//
+				// distance used to "normalize" the face's vertices against a known reference value.
+				//
+				landmarkScaleReference.value = C.subVectors(landmarks[scaleRefIndexB], landmarks[scaleRefIndexA]).lengthSq();
+				landmarkScaleReference.needsUpdate = true;
 
 				const data = landmarkStore.value.array ;
 
+				//
+				// make all values relative to the reference distance
+				//
 				for (let i = 0; i < landmarks.length; i++) {
-					data[i * 3] = landmarks[i].x;
-					data[i * 3 + 1] = landmarks[i].y;
-					data[i * 3 + 2] = landmarks[i].z;
+					data[i * 3] = landmarks[i].x ;
+					data[i * 3 + 1] = landmarks[i].y ;
+					data[i * 3 + 2] = landmarks[i].z ;
 				}
 
 				landmarkStore.value.needsUpdate = true;
@@ -253,13 +283,17 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 				const A1 = landmarks[234];
 				const A2 = landmarks[93];
 				const B1 = landmarks[454];
-				const B2 = landmarks[323];
+				const B2 = landmarks[323];  
+				
 
 				A.copy( A1 ).sub(A2).divideScalar(2).add(A2);
 				B.copy( B1 ).sub(B2).divideScalar(2).add(B2);
 
 				center.value.subVectors(B, A).divideScalar(2).add(A);
 				center.needsUpdate = true;  
+
+				ratio.value = Math.sqrt( geometryScaleReference.value /landmarkScaleReference.value );
+				ratio.needsUpdate = true;
 			}
 		}
 		

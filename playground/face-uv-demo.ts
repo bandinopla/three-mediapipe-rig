@@ -15,9 +15,10 @@ import { Inspector } from "three/examples/jsm/inspector/Inspector.js";
 import { mix, texture, uniform } from "three/tsl";
 
 export const faceUVDemo: DemoHandler = {
-    name: "face-uv-demo",
+    name: "face-uv",
     trackerConfig: {
         debugVideo: import.meta.env.BASE_URL + "face.mp4",
+        //debugVideo: import.meta.env.BASE_URL + "webcam4.mp4", //diferent aspect ratio
         displayScale: 1,
 		onlyFace:true,
 		drawLandmarksOverlay:false
@@ -26,12 +27,12 @@ export const faceUVDemo: DemoHandler = {
         const face = "mediapipe-canonical-face.glb";
 
         const controls = new OrbitControls(camera, renderer.domElement);
-        camera.position.set(0, 0, 3);
+        camera.position.set(0, 0, 11);
         camera.fov = 22.5;
         camera.updateProjectionMatrix();
         controls.update();
 
-        const debugLight = new PointLight(0xff0000, 3, 10);
+        const debugLight = new PointLight(0xff0000, 8, 10);
         debugLight.position.set(0, 0, 0);
         debugLight.castShadow = true;
 
@@ -64,6 +65,8 @@ export const faceUVDemo: DemoHandler = {
             // see: https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/modules/face_geometry/data/canonical_face_model.fbx
             //
             const mesh = scene.getObjectByName("face_model_with_iris") as Mesh;
+			 
+			// scene.add(mesh.clone()); // Uncomment to see how it "deforms" in relation to the original mesh... just so you see how it morphs.
 
             //
             // this "binds" the geometry to be in sync with the face mesh provided by mediapipe.
@@ -103,6 +106,7 @@ export const faceUVDemo: DemoHandler = {
 
             mesh.castShadow = true;
             mesh.receiveShadow = true;
+			mesh.scale.z *= 1.1
 
             const shapes = inspector.createParameters("Face");
             let vals = { ...mesh.morphTargetDictionary };
@@ -111,7 +115,7 @@ export const faceUVDemo: DemoHandler = {
                 ([key, value]) => {
                     vals[key] = 0;
                     shapes
-                        .add(vals, key, 0, 0.1, 0.001)
+                        .add(vals, key, 0, 1, 0.001)
                         .name(key)
                         .onChange((v) => {
                             mesh.morphTargetInfluences![value] = v;
@@ -131,8 +135,8 @@ export const faceUVDemo: DemoHandler = {
             //
             // Make a light spin just for show...
             //
-            debugLight.position.x = Math.sin(Date.now() * 0.01) * 1;
-            debugLight.position.y = Math.cos(Date.now() * 0.01) * 1;
+            debugLight.position.x = Math.sin(Date.now() * 0.01) * 3;
+            debugLight.position.y = Math.cos(Date.now() * 0.01) * 3;
 
             //
             // Update the face

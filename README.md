@@ -12,7 +12,7 @@ This will run 3 models: face, body, hands. So expect a FPS drop.
 Expolore the demos:
 - [Characters](https://bandinopla.github.io/three-mediapipe-rig) 
 - [Hands Demo](https://bandinopla.github.io/three-mediapipe-rig/?demo=hands)
-- [Video to Face Geometry](https://bandinopla.github.io/three-mediapipe-rig/?demo=face-uv-demo)
+- [**Video to Face Geometry** !!](https://bandinopla.github.io/three-mediapipe-rig/?demo=face-uv)
 ---
 
 ## Table of Contents
@@ -236,6 +236,9 @@ const face = tracker.faceTracker.bindGeometry( faceMesh );
 //... and in your loop
 face.update(delta)
 ``` 
+
+### How does this work?
+You use the canonical face model provided by media pipe ( this is important because it has the same number of vertices as the facial mesh ), this code will create a positionNode ( needs a NodeMaterial ) that will adjust the position of the vertices to match the facial mesh and also it will use the video feed as a texture for the mesh, so it will look like the face is deforming and moving with the webcam feed.
 
 ## Multiple Characters
 

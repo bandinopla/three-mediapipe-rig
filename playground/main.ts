@@ -22,19 +22,15 @@ document.body.appendChild(stats.dom);
 
 const $querystring = new URLSearchParams( location.search);
 const demoName = $querystring.get("demo");
-let demo:DemoHandler|undefined;
+let demo:DemoHandler = charactersDemo;
 
-switch( demoName ) {
-	case "hands":
-		demo = handsDemo;
-		break;
-	case "face-uv":
-		demo = faceUVDemo;
-		break;
-	default:
-		demo = charactersDemo;
-		break;
-}
+[handsDemo, faceUVDemo, charactersDemo].forEach( d =>{
+	if( demoName==d.name )
+	{
+		demo = d;
+	}
+})
+ 
 
 await Promise.all([renderer.init(), setupTracker(demo.trackerConfig) ]).then(
     ([renderer, tracker]) => {
