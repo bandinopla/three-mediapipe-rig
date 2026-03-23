@@ -6,15 +6,19 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/bandinopla/three-mediapipe-rig.git"
-  },
-  "main": "./dist/three-mediapipe-rig.js",
-  "module": "./dist/three-mediapipe-rig.js",
-  "types": "./dist/module.d.ts",
+  }, 
+  "module": "./dist/rigger.js",
+  "types": "./dist/rigger.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/three-mediapipe-rig.js",
-      "types": "./dist/module.d.ts"
-    }
+      "import": "./dist/rigger.js",
+      "types": "./dist/rigger.d.ts",
+	  "default": "./dist/rigger.js"
+    },
+	"./meshcap": {
+		"import": "./dist/meshcap.js",
+		"types": "./dist/meshcap.d.ts"
+	}
   },
   "files": [
     "dist"
@@ -27,16 +31,17 @@
   },
   "devDependencies": {
     "@types/node": "^25.3.3",
+    "@types/three": "^0.183.1",
     "path": "^0.12.7",
     "typescript": "~5.7.2",
     "vite": "^6.1.0",
-    "vite-plugin-dts": "^4.5.4",
-	"@types/three": "^0.183.1"
+    "vite-plugin-dts": "^4.5.4"
   },
   "peerDependencies": {
+    "@mediapipe/tasks-vision": "^0.10.32",
     "three": "^0.183.1",
-	"@mediapipe/tasks-vision": "^0.10.32"
-  }, 
+	"fflate": "^0.8.2"
+  },
   "license": "MIT",
   "packageManager": "pnpm@9.0.0"
 }

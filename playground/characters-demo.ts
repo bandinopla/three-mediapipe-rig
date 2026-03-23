@@ -15,7 +15,7 @@ export const charactersDemo: DemoHandler = {
     name: "characters-demo",
     trackerConfig: {
         debugVideo: import.meta.env.BASE_URL + "webcam4.mp4",
-        displayScale: 1,
+        displayScale: .5,
     },
     setup: (
         renderer: WebGPURenderer,

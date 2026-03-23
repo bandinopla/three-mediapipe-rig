@@ -6,6 +6,7 @@ import { handsDemo } from "./hands-demo";
 import { DemoHandler } from "./demo-type";
 import { faceUVDemo } from "./face-uv-demo";
 import { charactersDemo } from "./characters-demo";
+import { faceClipEditor } from "./face-clip-editor";
 
 // — Renderer —
 const renderer = new THREE.WebGPURenderer({ antialias: true });
@@ -18,19 +19,25 @@ renderer.shadowMap.enabled = true;
 
 // add the gui stats
 const stats = new Stats();
-document.body.appendChild(stats.dom);
+//document.body.appendChild(stats.dom);
 
 const $querystring = new URLSearchParams( location.search);
 const demoName = $querystring.get("demo");
 let demo:DemoHandler = charactersDemo;
 
-[handsDemo, faceUVDemo, charactersDemo].forEach( d =>{
-	if( demoName==d.name )
-	{
-		demo = d;
-	}
-})
- 
+if( $querystring.get("editor")=="meshcap")
+{
+	demo = faceClipEditor;
+}
+else 
+{
+	[handsDemo, faceUVDemo, charactersDemo].forEach( d =>{
+		if( demoName==d.name )
+		{
+			demo = d;
+		}
+	}) 
+}
 
 await Promise.all([renderer.init(), setupTracker(demo.trackerConfig) ]).then(
     ([renderer, tracker]) => {
@@ -70,12 +77,12 @@ await Promise.all([renderer.init(), setupTracker(demo.trackerConfig) ]).then(
         scene.add(ambient);
 
         const directional = new THREE.DirectionalLight(0xffffff, 2);
-        directional.position.set(5, 10, 7);
+        directional.position.set(17, 10, 17);
 		directional.castShadow = true;
-		directional.shadow.mapSize.width = 2048;
-		directional.shadow.mapSize.height = 2048;
+		directional.shadow.mapSize.width = 2048/2;
+		directional.shadow.mapSize.height = 2048/2;
 		directional.shadow.camera.near = 0.5;
-		directional.shadow.camera.far = 30;
+		directional.shadow.camera.far = 110;
 		directional.shadow.camera.left = -10;
 		directional.shadow.camera.right = 10;
 		directional.shadow.camera.top = 10;
@@ -93,7 +100,7 @@ await Promise.all([renderer.init(), setupTracker(demo.trackerConfig) ]).then(
 			
 			demoHandler?.(delta);
 			renderer.render(scene, camera);
-			stats.update();
+			//stats.update();
 		})  
 		
     },

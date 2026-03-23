@@ -9,6 +9,16 @@ type BoneRef = {
 	normalizedName: string;
 };
 
+type Recorder = {
+	start: () => void;
+	captureFrame: () => void;
+	stop: (name?: string) => {
+		clip: THREE.AnimationClip;
+		saveToFile: () => void;
+	};
+	isRecording: () => boolean;
+}
+
 /**
  * Records the local rotation of the bones in the rig. The name used will be the normalized bone name.
  * @param rigRoot
@@ -20,7 +30,7 @@ export function createRigRecorder(
     rigRoot: THREE.Object3D,
     magging: BoneMap,
     fps = 30,
-) {
+): Recorder {
     const bones: BoneRef[] = [];
     const faceMesh = rigRoot.getObjectByName(
         magging.faceMesh,
@@ -155,7 +165,7 @@ export function createRigRecorder(
 	                rigRoot,
 	                (gltf) => {
 	                    // binary .glb
-	                    const blob = new Blob([gltf], {
+	                    const blob = new Blob([gltf as ArrayBuffer], {
 	                        type: "model/gltf-binary",
 	                    });
 	                    const url = URL.createObjectURL(blob);

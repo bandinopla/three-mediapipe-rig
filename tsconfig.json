@@ -15,7 +15,8 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable" ],
 	"baseUrl": ".",
 	"paths": {
-      "three-mediapipe-rig": ["./src/module.ts"]
+      "three-mediapipe-rig": ["./src/module.ts"],
+	  "three-mediapipe-rig/meshcap": ["./src/meshcap/meshcap.ts"]
     }
   },
   "include": ["src","playground"]

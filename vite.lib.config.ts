@@ -6,17 +6,19 @@ export default defineConfig({
   plugins: [
     dts({
       insertTypesEntry: true,
-      include: ['src'],
+      include: ['src'], 
     }),
   ],
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/module.ts'),
-      formats: ['es'],
-      fileName: 'three-mediapipe-rig',
+      entry: {
+		rigger: resolve(__dirname, 'src/module.ts'),
+		meshcap: resolve(__dirname, 'src/meshcap/meshcap.ts'),
+	  },
+      formats: ['es'], 
     },
     rollupOptions: {
-      external: [/^three(\/.*)?$/, /@mediapipe\/.*/],
+      external: [/^three(\/.*)?$/, /@mediapipe\/.*/, /^fflate(\/.*)?$/],
       output: {
         globals: {
           three: 'THREE',
@@ -26,6 +28,6 @@ export default defineConfig({
 	copyPublicDir:false,
     outDir: 'dist',
     emptyOutDir: true,
-    sourcemap: true,
+    sourcemap: false,
   },
 });

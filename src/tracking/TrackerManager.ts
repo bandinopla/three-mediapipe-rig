@@ -5,9 +5,9 @@ import {
     PoseLandmarker,
 } from "@mediapipe/tasks-vision";
 import * as THREE from "three/webgpu";
-import { loadPoseTracker } from "./PoseTracker";
-import { loadHandTracker } from "./HandTracker"; 
-import { loadFaceTracker } from "./FaceTracker";
+import { loadPoseTracker, PoseTracker } from "./PoseTracker";
+import { HandsTracker, loadHandTracker } from "./HandTracker"; 
+import { FaceTracker, loadFaceTracker } from "./FaceTracker";
 import { BoneMap, defaultBoneMap } from "./BoneMapping";
 import { createRigRecorder } from "./recoding/recorder";
 
@@ -94,7 +94,7 @@ export interface RecordableBindingHandler extends BindingHandler, RecorderHandle
 // Check if webcam access is supported.
 const hasGetUserMedia = () => !!navigator.mediaDevices?.getUserMedia;
 
-export async function setupTracker(config?: Partial<TrackerConfig>) {
+export async function setupTracker(config?: Partial<TrackerConfig>) : Promise<TrackerHandler>{
     const $cfg = {
         debugFrame: undefined,
         displayScale: 1,
@@ -135,6 +135,8 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
 	viewport.style.top = "0px";
 	viewport.style.left = "0px"; 
 	viewport.style.zIndex = "21";
+	viewport.style.maxWidth = "600px"; 
+	viewport.style.width = "100%"; 
 	viewport.classList.add("three-mediapipe-rig")
 	document.body.appendChild(viewport);
 
@@ -147,6 +149,7 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
     canvasElement.style.top = "0px";
     canvasElement.style.left = "0px";
     canvasElement.style.pointerEvents = "none";
+	canvasElement.style.maxWidth = "100%";  
     viewport.appendChild(canvasElement);
 
     function predict(source: TexImageSource) {
@@ -169,6 +172,9 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
         video.style.position = "absolute";
         video.style.top = "0px";
         video.style.left = "0px";
+		video.style.height = "auto"; 
+		video.style.maxWidth = "100%"; 
+		video.style.display = "block"; 
 
         if ($cfg.debugVideo) {
             video.src = $cfg.debugVideo;
@@ -180,7 +186,7 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
         }
 
         function predictWebcam() {
-            if (lastVideoTime !== video!.currentTime) {
+            if (lastVideoTime !== video!.currentTime && video!.readyState >= 2) {
                 predict(video!);
                 lastVideoTime = video!.currentTime;
             }
@@ -231,6 +237,8 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
         //#endregion
     } 
 
+	let webcamStopper:VoidFunction | undefined;
+
     return {
         poseTracker,
         handsTracker,
@@ -238,14 +246,10 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
         video,
 		canvas: canvasElement,
 
-		/**
-		 * A div that contains the video and canvas used to display the landmarks stacked on top of each other.
-		 */
+		
 		domElement: viewport,
 
-		/**
-		 * Start the webcam feed. This must be initiated by a user triggered event ( a click on a button ) due to security reasons. 
-		 */
+		
         start: async () => {
 			let stopped = false;
 
@@ -260,19 +264,20 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
             let stream: Awaited<MediaStream> | undefined;
 
 			function onTrackEnded(video: HTMLVideoElement): void {
+				if( stopped ) return;
 				console.warn('Camera track ended, attempting recovery...');
 				stopCamera(video);
 				retryWithBackoff(video);
 			}
 
 			function stopCamera(video: HTMLVideoElement): void {
-				stream?.getTracks().forEach(t => t.stop());
+				stream?.getVideoTracks().forEach(t => t.stop());
 				stream = undefined;
 				video.srcObject = null;
 			}
 
 			async function retryWithBackoff(video: HTMLVideoElement, attempt = 0): Promise<void> {
-			  const MAX_ATTEMPTS = 5;
+			  const MAX_ATTEMPTS = 3;
 			  const delay = Math.min(1000 * 2 ** attempt, 16000); // 1s, 2s, 4s, 8s, 16s
 
 			  if (attempt >= MAX_ATTEMPTS) {  
@@ -284,15 +289,14 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
 			  if(stopped) return;
 
 			  try {
-			    await startCamera(video);
-			    console.log('Camera recovered successfully');
-			  } catch {
-			    retryWithBackoff(video, attempt + 1);
+			    await startCamera(video); 
+			  } catch ( err ) {
+			    await handleCameraError(err, video, attempt + 1);
 			  }
 			}
 
 			async function startCamera(video: HTMLVideoElement): Promise<void> {
-			  try {
+			 
 			    stream = await navigator.mediaDevices.getUserMedia({ video: true });
 			    video.srcObject = stream;
 			    await video.play();
@@ -301,48 +305,42 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
 			    stream.getVideoTracks().forEach(track => {
 			      track.addEventListener('ended', () => onTrackEnded(video));
 			    });
-
-			  } catch (err) {
-			    handleCameraError(err, video);
-			  }
+ 
 			}
 
-			function handleCameraError(err: unknown, video: HTMLVideoElement): void {
+			async function handleCameraError(err: unknown, video: HTMLVideoElement, attempt=0): Promise<void> {
 			  if (err instanceof DOMException) {
 			    switch (err.name) {
 			      case 'NotAllowedError':
-			        throw new Error('Permission denied — prompt user to allow camera');
-			        break;
+			        throw new Error('Permission denied — prompt user to allow camera'); 
 			      case 'NotFoundError':
 			        console.error('No camera found — retry when device is connected');
-			        retryWithBackoff(video); // device might be plugged in later
+			        await retryWithBackoff(video, attempt + 1); // device might be plugged in later
 			        break;
-			      case 'NotReadableError':
-			        console.error('Camera in use by another app');
-			        retryWithBackoff(video);
-			        break;
-			      default:
-			        console.error('Camera error:', err.message);
-			        retryWithBackoff(video);
+			      case 'NotReadableError':  
+			        throw new Error('Camera in use by another app');
+			      default: 
+					throw new Error('Camera error: ' + err.message);
 			    }
+			  } else {
+				throw new Error('Unknown camera error: ' + err);
 			  }
 			} 
 
-            await startCamera(video!);
+            await retryWithBackoff(video!);
+
+			webcamStopper = () => {
+				stopped = true;
+				stopCamera(video!);
+				webcamStopper = undefined;
+			}
 
 			return {
-				stop:()=>{
-					stopped = true;
-					stopCamera(video!);
-				}
+				stop: webcamStopper
 			}
         },
 
-        /**
-         * Binds the bones of the rig to the landmarks provided by media pipe.
-         * @param rig The rig that contains all the bones and skinned meshes of your character.
-		 * @param magging The bone mapping to use for the rig.
-         */
+        
         bind: ( rig: THREE.Object3D, magging?:BoneMap ) => {
 
 			magging = magging || defaultBoneMap;
@@ -392,7 +390,86 @@ export async function setupTracker(config?: Partial<TrackerConfig>) {
                 },
             } as RecordableBindingHandler;
         },
+
+		
+		setVideoFromSource: ( source: string | File ) => {
+
+			webcamStopper?.();
+
+			if (!video) {
+                initializeVideo();
+            }
+
+			video!.src = source instanceof File ? URL.createObjectURL(source) : source;
+            video!.controls = true;
+            video!.loop = true;
+            video!.muted = true;
+            video!.controls = true;
+            video!.play();
+		},
+
+		
+		async setVideoFromWebcam():Promise<{ stop:VoidFunction}> {
+			if (!video) {
+                initializeVideo();
+            }
+
+			if( webcamStopper ) {
+				throw new Error("Webcam already started"); 
+			};
+
+			return await (this as TrackerHandler).start();
+		}
+
+
     };
 }
 
-export type TrackerHandler = Awaited<ReturnType<typeof setupTracker>>;
+export type TrackerHandler = {
+
+	poseTracker:PoseTracker|undefined,
+	handsTracker:{
+		left:HandsTracker,
+		right:HandsTracker,
+	}|undefined,
+	faceTracker:FaceTracker|undefined,
+
+	/**
+	 * Video element showing the webcam or video file
+	 */
+	video:HTMLVideoElement|undefined,
+
+	/**
+	 * Canvas where the debug landmarks are drawn
+	 */
+	canvas:HTMLCanvasElement|undefined,
+
+	/**
+	 * A div that contains the video and canvas used to display the landmarks stacked on top of each other.
+	 */
+	domElement:HTMLDivElement|undefined,
+
+	/**
+	 * Start the webcam feed. This must be initiated by a user triggered event ( a click on a button ) due to security reasons. 
+	 */
+	start: () => Promise<{ stop:VoidFunction}>;
+
+	/**
+     * Binds the bones of the rig to the landmarks provided by media pipe.
+     * @param rig The rig that contains all the bones and skinned meshes of your character.
+	 * @param magging The bone mapping to use for the rig.
+     */
+	bind: ( rig: THREE.Object3D, magging?:BoneMap ) => RecordableBindingHandler;
+
+	/**
+	 * Sets the source of the video used for the face tracking.
+	 * @param source 
+	 */
+	setVideoFromSource: ( source: string | File ) => void;
+
+	/**
+	 * Starts the webcam feed.
+	 * @returns A function to stop the webcam feed.
+	 */
+	setVideoFromWebcam: () => Promise<{ stop:VoidFunction}>;
+};

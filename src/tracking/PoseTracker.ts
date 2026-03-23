@@ -75,7 +75,7 @@ type PoseTrackerConfig = {
 /**
  * @see https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker
  */
-class PoseTracker extends Tracker<typeof poseMarks> {
+export class PoseTracker extends Tracker<typeof poseMarks> {
 	private _leftWristNormalizedPosition!:NormalizedLandmark;
 	private _rightWristNormalizedPosition!:NormalizedLandmark;
 

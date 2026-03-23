@@ -47,7 +47,7 @@ export async function loadHandTracker(vision: any, config:HandsTrackerConfig ) {
     return {
 		left:new HandsTracker(landmarker, "Left", isMyWrist.bind(null, config.leftWrist, config.rightWrist), config.drawLandmarks ),
 		right:new HandsTracker(landmarker, "Right", isMyWrist.bind(null, config.rightWrist, config.leftWrist), config.drawLandmarks )
-	};
+	} as const;
 }
 
 const handMarks = {
@@ -108,7 +108,7 @@ const currSide = new THREE.Vector3();
 const HALF_PI = Math.PI/2
 const DOWN = new THREE.Vector3(0,-1,0);
 
-class HandsTracker extends Tracker<typeof handMarks> {
+export class HandsTracker extends Tracker<typeof handMarks> {
 	private readonly sign:number;
 	private readonly isLeft:boolean;
 	/**

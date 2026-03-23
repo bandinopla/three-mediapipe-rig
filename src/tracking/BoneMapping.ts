@@ -85,10 +85,12 @@ export const defaultBoneMap:BoneMap = {
 	thighL:"thighL",
 	shinL:"shinL",
 	footL:"footL",
+	toesL:"toesL",
 
 	thighR:"thighR",
 	shinR:"shinR",
 	footR:"footR",
+	toesR:"toesR",
 	 
 	
 	handL:"handL",

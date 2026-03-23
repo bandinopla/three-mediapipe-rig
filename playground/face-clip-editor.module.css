@@ -1,0 +1,122 @@
+.inspector {
+	background-color: #222;
+	color: #eee;
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 100vw;
+	height: 100vh;
+	z-index: 99000;
+	overflow-y: auto;
+	padding: 100px;
+	font-family: Arial, Helvetica, sans-serif;
+}
+
+.frames {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 10px; 
+	align-items: center;
+	margin-top: 10px;
+}
+
+.frames canvas {
+	max-width: 100px;
+	border-radius: 15px;
+}
+
+.clip {
+	border: 1px dotted #333;
+	padding: 20px;
+	margin: 10px;
+	border-left: 4px solid #333;
+	background-color: black;
+	border-radius: 15px;
+}
+.clip  button {
+	margin-left: 10px;
+	padding: 2px 5px;
+	border-radius: 5px;
+	border: 1px solid #333;
+	background-color: #005baf;
+	color: #eee;
+	cursor: pointer;
+}
+
+.clip strong {
+	background-color: #555;
+	padding: 2px 5px;
+	border-radius: 4px;
+}
+
+.closeBtn {
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	font-size: 30px;
+	cursor: pointer;
+	padding: 0 10px;
+}
+
+.overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background-color: rgba(0,0,0,0.5);
+	z-index: 99000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 30px;
+	color: #eee;
+}
+
+.tutorialModalBody {
+	background-color: #333;
+	padding: 50px;
+	border-radius: 15px;
+	width: 80%;
+	height: 80%;
+	overflow-y: auto;
+	font-size: 24px;
+}
+.tutorialModalBody p {
+	margin-top: 20px;
+}
+.tutorialModalBody ol {
+	margin-top: 20px;
+}
+.tutorialModalBody ol li { 
+	margin-left: 20px;
+}
+.tutorialModalBody a {
+	color:cyan
+}
+.replayOverlay{
+	position: absolute;
+	top: 20px;
+	left: 20px;
+	 
+	background-color: rgba(0,0,0,0.5);
+	z-index: 99000; 
+	font-size:40px;
+	color: #eee;
+	padding: 20px 40px;
+	border-radius: 15px;
+	animation: blink 1s infinite;
+}
+@keyframes blink {
+	0% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.2;
+	}
+	100% {
+		opacity: 1;
+	}
+}
+ 

@@ -23,7 +23,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+	  "three-mediapipe-rig/meshcap": resolve(__dirname, "./src/meshcap/meshcap.ts"),
       "three-mediapipe-rig": resolve(__dirname, "./src/module.ts"),
+	// "three-mediapipe-rig/meshcap": resolve(__dirname, "./dist/meshcap.js"),
+    // "three-mediapipe-rig": resolve(__dirname, "./dist/rigger.js"),
     },
   },
 });

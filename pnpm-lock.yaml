@@ -11,9 +11,9 @@ importers:
       '@mediapipe/tasks-vision':
         specifier: ^0.10.32
         version: 0.10.32
-      '@types/three':
-        specifier: ^0.183.1
-        version: 0.183.1
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.2
       three:
         specifier: ^0.183.1
         version: 0.183.1
@@ -21,6 +21,9 @@ importers:
       '@types/node':
         specifier: ^25.3.3
         version: 25.3.3
+      '@types/three':
+        specifier: ^0.183.1
+        version: 0.183.1
       path:
         specifier: ^0.12.7
         version: 0.12.7

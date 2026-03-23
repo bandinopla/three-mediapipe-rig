@@ -4,16 +4,19 @@ import {
     FaceLandmarker,
 	NormalizedLandmark
 } from "@mediapipe/tasks-vision";
-import { BufferAttribute, Mesh, Object3D, Vector3, Node, VideoTexture, SRGBColorSpace, MeshPhysicalNodeMaterial } from "three/webgpu";
+import { BufferAttribute, Mesh, Object3D, Vector3, Node, VideoTexture, SRGBColorSpace, MeshPhysicalNodeMaterial, UniformNode, NodeMaterial } from "three/webgpu";
 import { Tracker } from "./Tracker";
 import { rootPosition } from "./util/getRootPosition";
 import { getBoneByName } from "./util/getBoneByName";
 import { lookAt } from "./util/lookAt";
-import { attribute, instancedArray, mix, texture, uniform, varying, vec2, vec2, vec3 } from "three/tsl";
+import { attribute, float, instancedArray, mix, texture, uniform, varying, vec2, vec3 } from "three/tsl";  
+import { createFaceLandmarksIndexAttribute, FACE_LANDMARKS_COUNT } from "./util/face-tracker-utils";
+
+
 
 export type FaceTrackerConfig = {
 	modelPath?: string,
-	videoElementRef?:()=>HTMLVideoElement,
+	videoElementRef?:()=>HTMLVideoElement|undefined,
 	drawLandmarks?:boolean
 }
 
@@ -60,7 +63,7 @@ const v4 = new Vector3();
 const v5 = new Vector3();
 const v6 = new Vector3();
 
-class FaceTracker extends Tracker<typeof faceMarks> {
+export class FaceTracker extends Tracker<typeof faceMarks> {
 	private blendshapeCategories: Category[] | undefined;
 	private blendshapeMap: Map<string, number> = new Map();
 	private smoothed: Record<string, number> = {};
@@ -170,6 +173,7 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 	 * 
 	 * @see https://github.com/google-ai-edge/mediapipe/tree/master/mediapipe/modules/face_geometry
 	 * @param mesh basically either the original or a clone of the canonical_face_model
+	 * @returns an object with a disposeMaterial method that should be called when the mesh is disposed of.
 	 */
 	bindGeometry( mesh:Mesh, setupTheMaterialYourself?:( posNode:Node, colorNode:Node )=>void )
 	{ 
@@ -180,31 +184,14 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 
 		const geometry = mesh.geometry;
         const posAttr = geometry.attributes.position; 
+ 
 
-        // Build a map from unique positions to the first vertex index that has that position.
-        // The canonical face mesh has 468 landmarks (+ iris vertices). Three.js may duplicate 
-        // vertices for normals/UV seams, so vertex index != landmark index.
-        // We find unique positions in order of first appearance, which preserves the 
-        // original canonical landmark ordering (0..467).
-        const uniquePositions: number[] = []; // uniquePositions[landmarkIdx] = geometry vertex index
-        const seen = new Map<string, number>(); // position key -> landmark index
-		const posIndex2LandmarkIndex : number[] = []; // position index -> landmark index
-
-        for (let i = 0; i < posAttr.count; i++) {
-            const key = `${posAttr.getX(i).toFixed(6)},${posAttr.getY(i).toFixed(6)},${posAttr.getZ(i).toFixed(6)}`;
-            if (!seen.has(key)) {
-                seen.set(key, uniquePositions.length);
-                uniquePositions.push(i); // the first vertex index for this unique position
-            }
-			posIndex2LandmarkIndex.push(seen.get(key)!);
-        }
-
-		//console.log(`Canonical mesh: ${posAttr.count} vertices, ${uniquePositions.length} unique positions`);
 		const center = uniform(new Vector3(0.5, 0.5, 0.5));
 
-		geometry.setAttribute("landmarkIndex", new BufferAttribute(new Uint16Array(posIndex2LandmarkIndex), 1));
+		createFaceLandmarksIndexAttribute(mesh);
+
 		const landmarkIndexAttr = attribute("landmarkIndex", "uint");
-		const landmarkStore = instancedArray(468, "vec3");
+		const landmarkStore = instancedArray(FACE_LANDMARKS_COUNT, "vec3");
 
 		const sampleUV = varying( landmarkStore.element(landmarkIndexAttr) ).xy;
 		let video:HTMLVideoElement|undefined;
@@ -217,11 +204,28 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 			new Vector3(posAttr.getX(scaleRefIndexB), posAttr.getY(scaleRefIndexB), posAttr.getZ(scaleRefIndexB))
 		).lengthSq(); 
 
+		console.log("# mesh face reference (live): ", meshFaceReference);
+
 		const geometryScaleReference = uniform(meshFaceReference);
 		const landmarkScaleReference = uniform(1); // will be calculated below.
-		const ratio = uniform(1);
+
+		
+		let disposeMaterial:VoidFunction|undefined;
 
 		return {
+
+			/**
+			 * Disposes of the material and removes events listeners on the video element.
+			 */
+			disposeMaterial: () => {
+				disposeMaterial?.();
+			},
+
+			/**
+			 * asas
+			 * @param delta asas
+			 * @returns 
+			 */
 			update: ( delta:number ) => {
 				if( !video )
 				{
@@ -229,16 +233,56 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 					if (!currentVideo || !currentVideo.videoWidth || !currentVideo.videoHeight) return;
 					video = currentVideo;
 
-					const tex = new VideoTexture(video); 
-						  tex.colorSpace = SRGBColorSpace;
+					
 
-					const videoRatio = video.videoWidth / video.videoHeight; 
+					const tex = new VideoTexture(video); 
+						  tex.colorSpace = SRGBColorSpace; 
+						  
+
+					const videoRatio = uniform( video.videoWidth / video.videoHeight ); 
+
+					const landmarkScaleReference = landmarkStore.element( scaleRefIndexB )
+						.sub( landmarkStore.element( scaleRefIndexA ) ) 
+						.lengthSq();
+
+					const ratio = geometryScaleReference.div(landmarkScaleReference).sqrt().mul(2);
+
+
+					const A1 = landmarkStore.element(234).xy;
+					const A2 = landmarkStore.element(93).xy;
+					const B1 = landmarkStore.element(454).xy;
+					const B2 = landmarkStore.element(323).xy; 
+
+					const A = A1.sub(A2).div(2).add(A2);
+					const B = B1.sub(B2).div(2).add(B2);
+
+					//
+					// center / pivot point to use by the landmarks...
+					//
+					const center = B.sub(A).div(2).add(A);
+
 					
 					// ionitialize material
-					const positionNode = landmarkStore.element(landmarkIndexAttr).sub(center).xzy.mul(vec3( 1,-1,1/videoRatio)).mul(ratio);
+					const positionNode = landmarkStore.element(landmarkIndexAttr).sub(center).xzy .mul(vec3( 1,-1, float(1).div(videoRatio) )).mul(ratio);
 
 
-					const colorNode = texture(tex, vec2( sampleUV.x, sampleUV.y.oneMinus()));
+					const colorNode = texture(tex, vec2( sampleUV.x, sampleUV.y.oneMinus())); 
+
+					/**
+					 * called when the video.src changes
+					 */
+					const onVideoSourceChanged = ()=>{
+
+						const tex = new VideoTexture(video); 
+						  	  tex.colorSpace = SRGBColorSpace;
+
+						colorNode.value = tex;
+						colorNode.needsUpdate = true;
+
+						videoRatio.value = video!.videoWidth / video!.videoHeight; 
+					}
+
+					video.addEventListener("loadeddata", onVideoSourceChanged );
 
 					if( setupTheMaterialYourself )
 					{
@@ -253,6 +297,12 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 							roughness:0.93
 
 						});
+					}
+
+					disposeMaterial = () => {
+						(colorNode.value as VideoTexture).dispose();
+						video?.removeEventListener("loadeddata", onVideoSourceChanged );
+						(mesh.material as NodeMaterial)?.dispose();
 					}
 				}
 
@@ -269,7 +319,7 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 				const data = landmarkStore.value.array ;
 
 				//
-				// make all values relative to the reference distance
+				//  upload the landmarks
 				//
 				for (let i = 0; i < landmarks.length; i++) {
 					data[i * 3] = landmarks[i].x ;
@@ -278,22 +328,7 @@ class FaceTracker extends Tracker<typeof faceMarks> {
 				}
 
 				landmarkStore.value.needsUpdate = true;
-
-				//// calculate face center point
-				const A1 = landmarks[234];
-				const A2 = landmarks[93];
-				const B1 = landmarks[454];
-				const B2 = landmarks[323];  
-				
-
-				A.copy( A1 ).sub(A2).divideScalar(2).add(A2);
-				B.copy( B1 ).sub(B2).divideScalar(2).add(B2);
-
-				center.value.subVectors(B, A).divideScalar(2).add(A);
-				center.needsUpdate = true;  
-
-				ratio.value = Math.sqrt( geometryScaleReference.value /landmarkScaleReference.value );
-				ratio.needsUpdate = true;
+  
 			}
 		}
 		
