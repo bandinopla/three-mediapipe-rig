@@ -112,7 +112,7 @@ export const faceClipEditor: DemoHandler = {
 		renderer.toneMapping = LinearToneMapping
 
 		document.querySelector("#credits > div:last-child")!.innerHTML = `
-	MeshCap by <a href="https://x.com/bandinoplaya">bandinoplaya</a>`; 
+	MeshCap by <a href="https://x.com/bandinopla">bandinopla</a>`; 
 
         //
         // load the canonical mesh
