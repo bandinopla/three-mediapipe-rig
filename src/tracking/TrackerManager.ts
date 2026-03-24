@@ -198,8 +198,9 @@ export async function setupTracker(config?: Partial<TrackerConfig>) : Promise<Tr
             video!.height = video!.videoHeight * $cfg.displayScale;
             canvasElement.width = video!.videoWidth;
             canvasElement.height = video!.videoHeight;
-            canvasElement.style.height = video!.height + "px";
+            canvasElement.style.height = "auto";
             canvasElement.style.width = video!.width + "px";
+            canvasElement.style.maxWidth = "100%"; 
 
             window.requestAnimationFrame(predictWebcam);
         });
