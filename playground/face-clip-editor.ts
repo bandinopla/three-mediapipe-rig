@@ -531,10 +531,19 @@ const startEditor: DemoHandler["setup"] = (
         .name("Frame Scale");
     const atlasSizeSelector = mainactions
         .add(settings, "atlasSize", [512, 1024, 2048, 4096, 8192])
-        .name("Width");
+        .name("Width")
+		.onChange( ()=>{
+			rev++;
+			repackClips();
+		});
     const paddingSelector = mainactions
         .add(settings, "padding", 0, 10, 1)
-        .name("Padding");
+        .name("Padding")
+		.onChange( ()=>{
+			rev++;
+			repackClips();
+		});
+
     const ambientLightIntensity = sceneSettings
         .add(settings.ambientLight, "intensity", 0, 2, 0.01)
         .name("Ambient Light Intensity");
