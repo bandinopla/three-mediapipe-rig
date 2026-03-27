@@ -340,6 +340,7 @@ const startEditor: DemoHandler["setup"] = (
             enter: () => {
                 recording = true;
                 btnCapture.name(txt.stop_recording);
+				document.body.classList.add( styles.recordingState);
 
                 recordedClip = {
                     fps: settings.fps,
@@ -364,6 +365,7 @@ const startEditor: DemoHandler["setup"] = (
             },
 
             exit: () => {
+				document.body.classList.remove( styles.recordingState);
                 recording = false;
                 rev++;
                 repackClips();
@@ -383,19 +385,12 @@ const startEditor: DemoHandler["setup"] = (
                 update = replayMaterial!.update;
 				showVideoPreview(false);
 
-				if( !this.domElement )
-				{
-					this.domElement = document.createElement("div");
-					this.domElement.classList.add( styles.replayOverlay );
-					this.domElement.innerText = "Replay";
-				}
-
-				document.body.appendChild(this.domElement);
+				document.body.classList.add( styles.replayingState);
 
             },
 			exit () {
 				showVideoPreview(true);
-				this.domElement?.remove();
+				document.body.classList.remove( styles.replayingState);
 			},
 
             onClickReplay: () => enter(states.initialState),
@@ -581,7 +576,10 @@ const startEditor: DemoHandler["setup"] = (
 
     const btnCapture = selectedClipActions
         .add(actions, "startRecording")
-        .name(txt.start_recording);
+        .name(txt.start_recording); 
+
+		// @ts-ignore
+		btnCapture.domElement.classList.add(styles.btnCapture);
 
     const btnReplay = selectedClipActions
         .add(actions, "replayClip")

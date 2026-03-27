@@ -120,3 +120,37 @@
 	}
 }
  
+.btnCapture {
+	background-color: #005baf;
+}
+
+.recordingState {
+	border: 3px solid red;
+}
+.replayingState {
+	--bg-color: blue;
+	border: 3px dotted var(--bg-color);
+	
+}
+
+.recordingState::before, .replayingState::before {
+	content: "● REC";
+	position: absolute;
+	top: 10px;
+	left: 50%;
+	transform: translateX(-50%);
+	font-size: 20px;
+	color: #eee;
+	background-color: red;
+	padding: 20px 40px;
+	border-radius: 15px;
+	animation: blink 1s infinite;
+}
+.replayingState::before {
+	content: "Replaying...";
+	background-color: var(--bg-color);
+}
+.recordingState .btnCapture {
+	background-color: red !important;
+	border-color: red !important;
+}
