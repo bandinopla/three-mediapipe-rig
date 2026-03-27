@@ -709,7 +709,7 @@ const startEditor: DemoHandler["setup"] = (
 				<li>You save the clips as a .mcap file and a texture atlas image ( 2 files )</li>
 				<li>You can then use these clips to animate the face in a game or project without needing a video anymore. </li>
 			</ol>
-			<p><br/>Read the <a href="https://github.com/bandinopla/three-mediapipe-rig/blob/main/MESHCAP.md">MeshCap documentation</a></p>
+			<p><br/>Read the <a href="https://github.com/bandinopla/three-mediapipe-rig/blob/main/MESHCAP.md">MeshCap documentation</a> for sample code on how to use the generated files.</p>
 			<p><br/>Click anywhere to close...</p>
 		`;
 		modal.container.onclick = () => {
