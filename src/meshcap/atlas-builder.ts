@@ -2,43 +2,156 @@ import { MeshCapAtlas, MCapClip, RecordedClip, UVCoord } from "./types";
 import { atlasToMCap } from "./write-mcap-file";
 
 
+// interface Shelf {
+//     y: number;
+//     height: number;
+//     currentX: number;
+// }
+
+// /**
+//  * Simple shelf bin packer algorithm.
+//  * Sorts items by height (descending) and packs them into shelves.
+//  */
+// function packShelves(
+//     items: { id: number; width: number; height: number }[],
+//     atlasWidth: number
+// ): { id: number; x: number; y: number; width: number; height: number }[] {
+//     const shelves: Shelf[] = [];
+//     const result: { id: number; x: number; y: number; width: number; height: number }[] = [];
+//     let currentY = 0;
+
+//     // Sort by height descending for better packing
+//     const sorted = [...items].sort((a, b) => b.height - a.height);
+
+//     for (const item of sorted) {
+//         // Try to fit in an existing shelf
+//         let placed = false;
+//         for (const shelf of shelves) {
+//             if (
+//                 item.width <= atlasWidth - shelf.currentX &&
+//                 item.height <= shelf.height
+//             ) {
+//                 result.push({ id: item.id, x: shelf.currentX, y: shelf.y, width: item.width, height: item.height });
+//                 shelf.currentX += item.width;
+//                 placed = true;
+//                 break;
+//             }
+//         }
+
+//         // Open a new shelf
+//         if (!placed) {
+//             const newShelf: Shelf = {
+//                 y: currentY,
+//                 height: item.height,
+//                 currentX: item.width,
+//             };
+//             shelves.push(newShelf);
+//             result.push({ id: item.id, x: 0, y: currentY, width: item.width, height: item.height });
+//             currentY += item.height;
+//         }
+//     }
+
+//     return result;
+// }  
+
+
+
+// function runShelfPack(
+//     sorted: { id: number; width: number; height: number }[],
+//     atlasWidth: number
+// ): {
+//     result: { id: number; x: number; y: number; width: number; height: number }[];
+//     totalHeight: number;
+// } {
+//     const shelves: Shelf[] = [];
+//     const result: { id: number; x: number; y: number; width: number; height: number }[] = [];
+//     let currentY = 0;
+
+//     for (const item of sorted) {
+//         let placed = false;
+
+//         for (const shelf of shelves) {
+//             if (
+//                 item.width <= atlasWidth - shelf.currentX &&
+//                 item.height <= shelf.height
+//             ) {
+//                 result.push({ id: item.id, x: shelf.currentX, y: shelf.y, width: item.width, height: item.height });
+//                 shelf.currentX += item.width;
+//                 placed = true;
+//                 break;
+//             }
+//         }
+
+//         if (!placed) {
+//             const newShelf: Shelf = {
+//                 y: currentY,
+//                 height: item.height,
+//                 currentX: item.width,
+//             };
+//             shelves.push(newShelf);
+//             result.push({ id: item.id, x: 0, y: currentY, width: item.width, height: item.height });
+//             currentY += item.height;
+//         }
+//     }
+
+//     return { result, totalHeight: currentY };
+// }
+
+
 interface Shelf {
     y: number;
     height: number;
     currentX: number;
 }
 
+interface Item {
+    id: number;
+    width: number;
+    height: number;
+}
+
+interface PackedItem extends Item {
+    x: number;
+    y: number;
+}
+
 /**
- * Simple shelf bin packer algorithm.
- * Sorts items by height (descending) and packs them into shelves.
+ * Pack shelves aiming for a square-ish output.
+ * If atlasWidth is provided, uses it. Otherwise computes optimal width
+ * to make the result as square as possible.
  */
 function packShelves(
-    items: { id: number; width: number; height: number }[],
-    atlasWidth: number
-): { id: number; x: number; y: number; width: number; height: number }[] {
+    items: Item[], 
+): { packed: PackedItem[]; width: number; height: number } {
+    
+    // Calculate optimal atlas width if not provided
+    const targetWidth = computeOptimalWidth(items);
+    
     const shelves: Shelf[] = [];
-    const result: { id: number; x: number; y: number; width: number; height: number }[] = [];
+    const packed: PackedItem[] = [];
     let currentY = 0;
 
-    // Sort by height descending for better packing
+    // Sort by height descending for better shelf packing
     const sorted = [...items].sort((a, b) => b.height - a.height);
 
     for (const item of sorted) {
-        // Try to fit in an existing shelf
         let placed = false;
+
+        // Try to fit in an existing shelf
         for (const shelf of shelves) {
-            if (
-                item.width <= atlasWidth - shelf.currentX &&
-                item.height <= shelf.height
-            ) {
-                result.push({ id: item.id, x: shelf.currentX, y: shelf.y, width: item.width, height: item.height });
+            if (item.width <= targetWidth - shelf.currentX && item.height <= shelf.height) {
+                packed.push({
+                    ...item,
+                    x: shelf.currentX,
+                    y: shelf.y,
+                });
                 shelf.currentX += item.width;
                 placed = true;
                 break;
             }
         }
 
-        // Open a new shelf
+        // Create new shelf if needed
         if (!placed) {
             const newShelf: Shelf = {
                 y: currentY,
@@ -46,13 +159,56 @@ function packShelves(
                 currentX: item.width,
             };
             shelves.push(newShelf);
-            result.push({ id: item.id, x: 0, y: currentY, width: item.width, height: item.height });
+            packed.push({
+                ...item,
+                x: 0,
+                y: currentY,
+            });
             currentY += item.height;
         }
     }
 
-    return result;
+    // Calculate actual bounds
+    const actualWidth = shelves.length > 0 
+        ? Math.max(...shelves.map(s => s.currentX)) 
+        : 0;
+    const actualHeight = currentY;
+
+    return {
+        packed,
+        width: Math.max(actualWidth, targetWidth),
+        height: actualHeight,
+    };
 }
+
+/**
+ * Compute optimal width to achieve ~square aspect ratio.
+ * Uses total area to estimate: width ≈ height, so width ≈ sqrt(totalArea)
+ */
+function computeOptimalWidth(items: Item[]): number {
+    if (items.length === 0) return 1;
+
+    const totalArea = items.reduce((sum, item) => sum + item.width * item.height, 0);
+    
+    // Target: width ≈ height, so width * height = totalArea
+    // If width ≈ height, then width² ≈ totalArea → width ≈ sqrt(totalArea)
+    let optimalWidth = Math.ceil(Math.sqrt(totalArea));
+    
+    // Ensure we can fit the widest item
+    const maxItemWidth = Math.max(...items.map(i => i.width));
+    optimalWidth = Math.max(optimalWidth, maxItemWidth);
+    
+    // Round up to a nice power-of-2 or multiple for texture optimization (optional)
+    optimalWidth = nextPowerOf2(optimalWidth);
+    
+    return optimalWidth;
+}
+
+// Optional: round to next power of 2 (good for GPU textures)
+function nextPowerOf2(n: number): number {
+    return Math.pow(2, Math.ceil(Math.log2(n)));
+}
+
 
 const footerHeight = 20;
 
@@ -80,16 +236,16 @@ export function buildMeshCapAtlas( clips:RecordedClip[], atlasSize:number, paddi
 	/**
 	 * pack the frames into shelves
 	 */
-	const packed = packShelves(items, atlasSize);
+	const packed = packShelves(items );
 
 	// Calculate total height needed
-    const initialHeight = Math.max(...packed.map(p => p.y + p.height)) + footerHeight;
-    const initialWidth = atlasSize;
+    const initialHeight = packed.height //Math.max(...packed.map(p => p.y + p.height)) + footerHeight;
+    const initialWidth = packed.width //atlasSize;
 
     // determine scale to fit within atlasSize
     const scale = Math.min(1.0, atlasSize / initialWidth, atlasSize / initialHeight);
     const atlasWidth = Math.floor(initialWidth * scale);
-    const atlasHeight = Math.floor(initialHeight * scale);
+    const atlasHeight = Math.floor(initialHeight * scale)+footerHeight;
 
 	// Create the atlas canvas
     const atlasCanvas = document.createElement('canvas');
@@ -104,7 +260,7 @@ export function buildMeshCapAtlas( clips:RecordedClip[], atlasSize:number, paddi
     // Draw all canvases into the atlas
     const entries :UVCoord[] = [];
 
-    for (const pack of packed) {
+    for (const pack of packed.packed) {
         const sourceCanvas = canvases[ pack.id ];
         const x = pack.x + padding;
         const y = pack.y + padding;
@@ -136,21 +292,23 @@ export function buildMeshCapAtlas( clips:RecordedClip[], atlasSize:number, paddi
 		for( const frame of clip.frames ){
 			mcapClip.frames.push({
 				frameUV:entries[ frameIndex++ ],
-				cropUV:frame.cropUV
+				cropUV:frame.cropUV,
+				startTime:frame.startTime
 			});
 		}
 		mcapClips.push(mcapClip);
 	}
 
 	// write in the atlas a signature that says: "by bandinopla"
-	ctx.font = `${Math.max(6, Math.floor(12 * scale))}px monospace`; 
+	ctx.font = `${Math.max(6, Math.floor(12 ))}px monospace`; 
 	ctx.fillStyle = "#ff0000";
-	ctx.fillText("Created with MeshCap : https://bandinopla.github.io/three-mediapipe-rig/?app=meshcap", 0, atlasHeight - Math.max(2, 4 * scale));
+	ctx.fillText("Created with MeshCap : https://bandinopla.github.io/three-mediapipe-rig/?editor=meshcap", 0, atlasHeight - 4);
 
     return { 
 		canvas: atlasCanvas, 
 		clips:mcapClips,
 		padding,
+		atlasSize,
 		async save(downloadFile:boolean){
 			const binBlob = await atlasToMCap( this );
 			if( downloadFile ){

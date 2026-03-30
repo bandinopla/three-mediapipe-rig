@@ -1,12 +1,12 @@
 import * as THREE from "three/webgpu"; 
-import { GLTFLoader, OrbitControls } from "three/examples/jsm/Addons.js"; 
-import { BindingHandler, RecordableBindingHandler, setupTracker } from "three-mediapipe-rig"; 
+import { setupTracker } from "three-mediapipe-rig"; 
 import Stats from "three/examples/jsm/libs/stats.module.js";
 import { handsDemo } from "./hands-demo";
-import { DemoHandler } from "./demo-type";
+import { DemoHandler, StandaloneDemoHandler } from "./demo-type";
 import { faceUVDemo } from "./face-uv-demo";
 import { charactersDemo } from "./characters-demo";
-import { faceClipEditor } from "./face-clip-editor";
+import { loadMeshcapFiles } from "./load-meshcap-files";
+import { gameYoutubers } from "./game-youtubers";
 
 // — Renderer —
 const renderer = new THREE.WebGPURenderer({ antialias: true });
@@ -23,15 +23,15 @@ const stats = new Stats();
 
 const $querystring = new URLSearchParams( location.search);
 const demoName = $querystring.get("demo");
-let demo:DemoHandler = charactersDemo;
+let demo:DemoHandler|StandaloneDemoHandler = charactersDemo;
 
 if( $querystring.get("editor")=="meshcap")
 {
-	demo = faceClipEditor;
+	demo = (await import("./face-clip-editor")).faceClipEditor;
 }
 else 
 {
-	[handsDemo, faceUVDemo, charactersDemo].forEach( d =>{
+	[handsDemo, faceUVDemo, charactersDemo, loadMeshcapFiles, gameYoutubers].forEach( d =>{
 		if( demoName==d.name )
 		{
 			demo = d;
@@ -39,7 +39,7 @@ else
 	}) 
 }
 
-await Promise.all([renderer.init(), setupTracker(demo.trackerConfig) ]).then(
+await Promise.all([renderer.init(), "trackerConfig" in demo ? setupTracker(demo.trackerConfig) : Promise.resolve(null) ]).then(
     ([renderer, tracker]) => {
         // — Scene —
         const scene = new THREE.Scene();
@@ -90,6 +90,7 @@ await Promise.all([renderer.init(), setupTracker(demo.trackerConfig) ]).then(
 		directional.shadow.bias = -0.001;
         scene.add(directional);
 
+		// @ts-ignore
 		const demoHandler = demo.setup(renderer, camera, scene, tracker);
 
 		let clock = new THREE.Timer() 

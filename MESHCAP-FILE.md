@@ -4,6 +4,8 @@ Files in charge of using this data:
 * [src/meshcap/parse-mcap-file.ts](src/meshcap/parse-mcap-file.ts)
 * [src/meshcap/write-mcap-file.ts](src/meshcap/write-mcap-file.ts)
 
+File compressed with: https://www.npmjs.com/package/fflate using deflate at level 9
+
 ```
  [4 bytes] magic number
  [1 bytes] version 
@@ -32,4 +34,10 @@ Files in charge of using this data:
    [2/1 byte] x
    [2/1 byte] y
    [2/1 byte] z
+Per clip:
+   [2 bytes] clip duration
+   [2 bytes] audio clip start time ( in seconds. if == 1 it means it doesnt use sound )
+   
+Per frame ( flatmap of all the frames from all the clips )
+   [1 bytes] frame's start time delta in clip's time ( 0 being the start of the clip ) 
 ```

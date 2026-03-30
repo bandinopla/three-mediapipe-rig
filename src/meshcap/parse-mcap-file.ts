@@ -1,8 +1,10 @@
-import { Vector3Like } from "three";
+import { Mesh, Texture, Vector3Like, NodeMaterial} from "three/webgpu";
 import { MCapClip, MCapFile, RecordedClip, UVCoord } from "./types";
 import { inflate } from "fflate";
 import { MCAP_FILE_VERSION, MCAP_MAGIC } from "./constants"; 
 import { FACE_LANDMARKS_COUNT } from "../tracking/util/face-tracker-utils";
+import { AudioSpriteAtlas, extractAudioSprites } from "./audio";
+import { createMeshCapMaterial } from "./material"; 
 
 
 
@@ -40,6 +42,8 @@ export async function loadMeshCapFile( mcapFileSource:string|File ) : Promise<MC
  */
 async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCapFile> {
     
+	let usesAudioAtlas = false;
+
     // Decompress first
     const decompressed = await new Promise<Uint8Array>((resolve, reject) => {
         inflate(new Uint8Array(compressedBuffer), (err, result) => {
@@ -60,7 +64,7 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
 	//
 	// TODO: handle compatibility with older versions
 	//
-    if (version !== MCAP_FILE_VERSION) throw new Error(`Unsupported version: ${version} != ${MCAP_FILE_VERSION}`);
+    //if (version !== MCAP_FILE_VERSION) throw new Error(`Unsupported version: ${version} != ${MCAP_FILE_VERSION}`);
 
     const clipsCount = view.getUint8(offset); offset += 1;
 	const atlasSize = view.getUint16(offset); offset += 2;
@@ -132,6 +136,10 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
             landmarks.push(frameLandmarks);
         }
   
+		/**
+		 * Default startTime in case someone opens a version 1 file...
+		 */ 
+
         clips.push({ 
 			name, 
 			fps, 
@@ -140,12 +148,54 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
  
 			frames: uvCrop.map( (cropUV, i)=>({ 
 				cropUV, 
-				frameUV: frameCoords[i]
+				frameUV: frameCoords[i],
+				startTime: i / fps //<-- default for versions sub 2...
 			})), 
 
-			landmarks 
-		});
+			landmarks ,
+			duration: frameCount / fps // default for versions sub 2...
+		}); 
     }
+
+	if( version>=2 )
+	{
+		// -- extract audio sprites --
+		for(let i=0; i<clips.length; i++){
+			let clipDuration = view.getUint16(offset); offset += 2;
+
+			clips[i].duration = clipDuration / 1000;
+
+			let audioStart = view.getUint16(offset); offset += 2;
+
+			if( audioStart===1 )
+			{ 
+				// this clip has no audio
+				console.log("Clip " + i + " has no audio");
+			}
+			else 
+			{
+				audioStart /= 1000; 
+
+				clips[i].audioSprite = { start: audioStart };
+				usesAudioAtlas = true; 
+			} 
+		}
+
+		// -- extract frame deltas --
+		for(let i=0; i<clips.length; i++)
+		{
+			const clipInfo = clips[i];
+			let lastTimestamp = 0;
+			for(let j=0; j<clipInfo.frames.length; j++)
+			{
+				const delta = view.getUint8(offset); offset += 1;
+				const timestamp = lastTimestamp + delta / 1000;
+				clipInfo.frames[j].startTime = timestamp;
+				lastTimestamp = timestamp;
+			}
+		}
+	}
+	
 
     return { 
 		clips, 
@@ -154,10 +204,11 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
 		atlasPadding,
 
 		
-		unpackClips: async ( atlasSource:File|Blob|string|HTMLImageElement|HTMLCanvasElement ) => {
+		unpackClips: async ( atlasSource:File|Blob|string|HTMLImageElement|HTMLCanvasElement, audioAtlasSource?:File|Blob|string|ArrayBuffer ) => {
  
 			let atlas:HTMLCanvasElement;
 			let disposeAfter = true; 
+			let audioAtlas:AudioSpriteAtlas|undefined = undefined;
 
 			if (atlasSource instanceof HTMLCanvasElement) 
 			{
@@ -228,6 +279,7 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
 						return { 
 							canvas: frameCanvas,
 							cropUV: frame.cropUV, 
+							startTime: frame.startTime, 
 						};
 					})
 				};
@@ -238,7 +290,26 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
 				atlas.remove();
 			}
 
-			return recordedClips;
+			if( usesAudioAtlas )
+			{
+				if(!audioAtlasSource) {
+					console.warn("This mcap file uses an audio atlas, but no audio atlas file was provided.");
+				}
+				else 
+				{
+					audioAtlas = await extractAudioSprites(audioAtlasSource, recordedClips);
+				}
+			}
+
+			return {
+				clips: recordedClips,
+				audioAtlas
+			};
+		},
+
+		createMaterialHandlerOnMesh: (mesh:Mesh, atlasTexture:Texture, host?:NodeMaterial, audioAtlas?:AudioBuffer )=>{
+			const handler = createMeshCapMaterial(atlasTexture, clips, mesh, host, audioAtlas);
+			return handler;
 		}
 	};
 }

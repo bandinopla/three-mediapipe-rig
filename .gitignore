@@ -7,3 +7,5 @@ web/
 3d/
 wasm/
 *.task
+_ignore/
+notes

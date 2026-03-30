@@ -2,9 +2,9 @@ import { DemoHandler } from "./demo-type";
 import { Inspector } from "three/examples/jsm/inspector/Inspector.js";
 import { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { Mesh } from "three";
+
 import {
-	ACESFilmicToneMapping,
-    AmbientLight,
+	AmbientLight,
     BackSide,
     CanvasTexture,
     Color,
@@ -13,9 +13,7 @@ import {
     MeshBasicNodeMaterial,
     MeshPhysicalNodeMaterial,
     Node,
-    NodeMaterial,
     PlaneGeometry,
-    ReinhardToneMapping,
     SphereGeometry,
     SRGBColorSpace,
 } from "three/webgpu";
@@ -41,9 +39,16 @@ import {
     RecordedClip,
 	createMeshCapMaterial,
     MeshCapMaterialHandler,
-} from "three-mediapipe-rig/meshcap";  
+	AudioSpriteAtlas,
+	audioBufferToWav
+} from "three-mediapipe-rig/meshcap";   
 
-const EDITOR_VERSION = "0.0.1";
+/**
+ * Changelog:
+ * - 0.0.1 : first release
+ * - 0.0.2 : Added audio recording 
+ */
+const EDITOR_VERSION = "0.0.2";
 
 const txt = {
     start_recording: "⦿ Start recording",
@@ -66,18 +71,20 @@ const txt = {
     panelTitleSelectedClip: "Current Clip",
     panelTitleTextureAtlas: "Texture Atlas",
     panelTitleMainMenu: `Welcome to MeshCap ( v${EDITOR_VERSION} )`,
-    btnOpen: "Open ( .mcap + Image Atlas )",
+    btnOpen: "Open ( .mcap + Atlas + Sounds )",
     btnHowToUse: "Instructions",
     panelTitleScene: "Scene",
 	panelTitleVideoSource:"Video source",
-	sourceFromVideoFile:"From video file",
-	sourceFromWebcam:"From webcam",
+	sourceFromVideoFile:"Video file",
+	sourceFromWebcam:"Webcam ( NO AUDIO )",
+	sourceFromWebcamWithAudio:"Webcam + MIC (audio)",
 	sourceDefaultWomanFace:"Default face",
 	btnCopyClips:"Copy clips dictionary",
 	btnDownloadCanonicalFaceMesh:"Canonical face mesh (.glb)",
-};
+	btnDownloadSoundSprite:"Audios Atlas (.wav)",
+}; 
 
-type AppState = {
+interface AppState {
     enter?(): void;
     exit?: () => void;
     update?: (delta: number) => void;
@@ -89,7 +96,7 @@ type AppState = {
     onClickInspectAtlas?: () => void;
 
 	domElement?: HTMLDivElement;
-};
+}; 
 
 const DEFAULT_VIDEO_SOURCE = import.meta.env.BASE_URL + "face4.mp4";
 const CANONICAL_FACE_URL = import.meta.env.BASE_URL + "mediapipe-canonical-face.glb";
@@ -99,8 +106,8 @@ export const faceClipEditor: DemoHandler = {
     trackerConfig: {
         onlyFace: true,
         debugVideo: DEFAULT_VIDEO_SOURCE,
-        //drawLandmarksOverlay: false,
-        displayScale: 0.6,
+        drawLandmarksOverlay: false,
+        displayScale: 1,
     },
     setup: (renderer, camera, scene, tracker) => {
         let editor: ReturnType<DemoHandler["setup"]> | undefined;
@@ -235,8 +242,15 @@ const startEditor: DemoHandler["setup"] = (
         }
     };
 
+	const repackAudioSprite = () => {
+		if (lastAudioSpriteRev != rev) {
+			audioPack = createAudioSpriteAtlas();
+			lastAudioSpriteRev = rev;
+		}
+	};
+
 	const showVideoPreview = ( yes:boolean )=>{
-		tracker.domElement.style.display = yes ? "block" : "none";
+		tracker.domElement!.style.display = yes ? "block" : "none";
 	}
 
 	/**
@@ -255,10 +269,12 @@ const startEditor: DemoHandler["setup"] = (
         open,
         howToUse: openTutorialModal,
 		sourceFromWebcam,
+		sourceFromWebcamWithAudio,
 		sourceFromVideoFile, 
 		sourceDefaultWomanFace,
 		copyClipsDictionary,
-		downloadCanonicalFaceMesh
+		downloadCanonicalFaceMesh,
+		downloadSoundSprite
     };
 
 	/**
@@ -336,8 +352,8 @@ const startEditor: DemoHandler["setup"] = (
         },
 
         recordingState: {
-            ...baseState,
-            enter: () => {
+            ...baseState,  
+            enter () {
                 recording = true;
                 btnCapture.name(txt.stop_recording);
 				document.body.classList.add( styles.recordingState);
@@ -348,6 +364,7 @@ const startEditor: DemoHandler["setup"] = (
                     landmarks: [],
                     frames: [],
                     scale: settings.scale,
+					duration: -1,
                     aspectRatio:
                         tracker.video!.videoWidth / tracker.video!.videoHeight,
                 };
@@ -362,14 +379,84 @@ const startEditor: DemoHandler["setup"] = (
 
                 faceMesh!.material = liveMaterial!;
                 update = syncLiveMaterial;
-            },
 
-            exit: () => {
-				document.body.classList.remove( styles.recordingState);
-                recording = false;
-                rev++;
-                repackClips();
-            },
+				//#region Audio recording
+				// capture the audio....
+				const stream =
+					(tracker.video as any)?.captureStream?.() ||
+					(tracker.video as any)?.mozCaptureStream?.();
+
+				const tracks:MediaStreamTrack[] = tracker.video!.muted ? [] : stream.getAudioTracks(); 
+				let stopRecordingSound: VoidFunction|undefined;
+
+				if( tracks.length > 0){
+					const audioStream = new MediaStream(tracks);
+					const chunks: BlobPart[] = [];
+					//let startTime: number | null = null;
+					//let durationSeconds = 0;
+
+					const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+						? 'audio/webm;codecs=opus'
+						: 'audio/ogg;codecs=opus';
+
+					const recorder = new MediaRecorder(audioStream, {
+						mimeType 
+					});
+
+					// recorder.onstart = () => {
+					// 	//startTime = Date.now();
+					// };
+
+					recorder.ondataavailable = (event) => {
+						if (event.data.size > 0) {
+							chunks.push(event.data); 
+						}
+					};
+ 
+					recorder.onstop = () => {
+						const audioBlob = new Blob(chunks, { type: mimeType }); 
+
+						const url = URL.createObjectURL(audioBlob);  
+
+						recordedClip!.audioSprite = {
+							domElement: new Audio(url),
+							start:-1, 
+						}; 
+					}; 
+
+					recorder.start();
+
+					stopRecordingSound = () => {
+						recorder.stop();  
+					};
+
+				}
+				//#endregion
+
+				this.update = delta => {
+					if (
+			            tracker.video &&
+			            tracker.video.videoWidth &&
+			            tracker.video.videoHeight &&
+			            tracker.faceTracker &&
+			            recording
+			        ) {
+			            captureFrame(delta);
+			        }
+				}
+
+				this.exit = async ()=>{ 
+					document.body.classList.remove( styles.recordingState);
+
+					recordedClip!.duration = totalCaptureTime;
+ 
+					stopRecordingSound?.();
+					 
+	                recording = false;
+	                rev++;
+	                repackClips();
+				}
+            }, 
 
             onClickRecord: () => enter(states.initialState),
         },
@@ -377,22 +464,42 @@ const startEditor: DemoHandler["setup"] = (
         replayState: {
             ...baseState,
             enter() {
-                btnReplay.name(txt.stopReplay);
+                btnReplay.name(txt.stopReplay);  
 
-                replayMaterial!.goto(settings.currentClipIndex);
+                replayMaterial!.gotoAndLoop(settings.currentClipIndex, (offset:number)=>{
+					recordedClip!.audioSprite!.domElement!.pause();
+					recordedClip!.audioSprite!.domElement!.currentTime = 0; //offset;
+					recordedClip!.audioSprite!.domElement!.play();
+				});
 
                 faceMesh!.material = replayMaterial!.material;
                 update = replayMaterial!.update;
+
+				tracker.pause();
+
 				showVideoPreview(false);
 
 				document.body.classList.add( styles.replayingState);
 
-            },
-			exit () {
-				showVideoPreview(true);
-				document.body.classList.remove( styles.replayingState);
-			},
+				if(recordedClip?.audioSprite?.domElement){
+					recordedClip.audioSprite.domElement.currentTime = 0; 
+					recordedClip.audioSprite.domElement.play();  
+				}
 
+				this.exit = ()=> {
+ 
+					document.body.classList.remove( styles.replayingState);
+
+					if(recordedClip?.audioSprite?.domElement){
+						recordedClip.audioSprite.domElement.pause();
+					}
+
+					tracker.resume();
+					
+					showVideoPreview(true);
+					
+				}
+            }, 
             onClickReplay: () => enter(states.initialState),
         },
 
@@ -488,6 +595,8 @@ const startEditor: DemoHandler["setup"] = (
                 fps.setValue(clip.fps);
                 scale.setValue(clip.scale);
             }
+
+			recordedClip = clips[v];
         });
 
     /**
@@ -533,7 +642,7 @@ const startEditor: DemoHandler["setup"] = (
         .add(settings, "atlasSize", [512, 1024, 2048, 4096, 8192])
         .name("Width")
 		.onChange( ()=>{
-			rev++;
+			rev++; 
 			repackClips();
 		});
     const paddingSelector = mainactions
@@ -549,7 +658,7 @@ const startEditor: DemoHandler["setup"] = (
         .name("Ambient Light Intensity");
 
     let recordedClip: RecordedClip | undefined;
-    let currentAtlas: MeshCapAtlas | undefined;
+    let currentAtlas: MeshCapAtlas | undefined; 
     let clips: RecordedClip[] = [];
 
 	/**
@@ -562,6 +671,12 @@ const startEditor: DemoHandler["setup"] = (
 	 * last packed rev ( if lastPackedRev == rev, we don't need to update the atlas)
 	 */
     let lastPackedRev = -1;
+
+	/**
+	 * last known audio sprite revision
+	 */
+	let lastAudioSpriteRev = -1;
+	let audioPack:Promise<AudioSpriteAtlas> | undefined;
 
 	/**
 	 * if we are recording frames from the video or not.
@@ -580,6 +695,7 @@ const startEditor: DemoHandler["setup"] = (
     mainMenu.add(actions, "howToUse").name(txt.btnHowToUse);
 
 	sourceMenu.add(actions, "sourceFromWebcam").name(txt.sourceFromWebcam);
+	sourceMenu.add(actions, "sourceFromWebcamWithAudio").name(txt.sourceFromWebcamWithAudio);
 	sourceMenu.add(actions, "sourceFromVideoFile").name(txt.sourceFromVideoFile);
 	sourceMenu.add(actions, "sourceDefaultWomanFace").name(txt.sourceDefaultWomanFace);
 
@@ -599,8 +715,11 @@ const startEditor: DemoHandler["setup"] = (
 
     exportSettings.add(actions, "exportMetadata").name(txt.btnMetadata);
     exportSettings.add(actions, "exportAtlasTexture").name(txt.btnAtlasTexture);
+	exportSettings.add(actions, "downloadSoundSprite").name(txt.btnDownloadSoundSprite);
+
 	exportSettings.add(actions, "copyClipsDictionary").name(txt.btnCopyClips);
 	exportSettings.add(actions, "downloadCanonicalFaceMesh").name(txt.btnDownloadCanonicalFaceMesh);
+	
 
     inspectSettings.add(actions, "inspectMetadata").name(txt.btnMetadata);
     const btnInspectAtlas = inspectSettings
@@ -617,18 +736,16 @@ const startEditor: DemoHandler["setup"] = (
         input.type = "file";
         input.multiple = true;
         input.accept =
-            ".mcap," + IMAGE_EXTENSIONS.map((e) => "image/" + e).join(",");
+            ".mcap," + IMAGE_EXTENSIONS.map((e) => "image/" + e).join(",") + ",audio/*";
         input.onchange = (e: Event) => {
-            const files = input.files;
-            if (files?.length != 2) {
-                alert(
-                    "Please select 2 files, the .mcap and the atlas texture.",
-                );
-                return;
-            }
+            const files = input.files;  
+
+			if(!files?.length) return;
+
             const getExt = (f: File) => f.name.split(".").pop()!.toLowerCase();
             let mcapFile: File | undefined;
             let atlasFile: File | undefined;
+			let audioFile: File | undefined;
 
             for (const file of files) {
                 if (getExt(file) === "mcap") {
@@ -636,6 +753,14 @@ const startEditor: DemoHandler["setup"] = (
                 } else if (IMAGE_EXTENSIONS.includes(getExt(file))) {
                     atlasFile = file;
                 }
+				else if (file.type.startsWith("audio/")) {
+					if( audioFile )
+					{
+						alert("Please select ONLY ONE audio atlas file.");
+						return;
+					}
+					audioFile = file;
+				}
             }
 
             if (!mcapFile || !atlasFile) {
@@ -645,7 +770,7 @@ const startEditor: DemoHandler["setup"] = (
                 return;
             }
 
-            const loadMcap = loadMeshCapFile(mcapFile);
+            const loadMcap = loadMeshCapFile(mcapFile); 
 
             const loadAtlas = new Promise<HTMLCanvasElement>(
                 (resolve, reject) => {
@@ -658,29 +783,76 @@ const startEditor: DemoHandler["setup"] = (
                         ctx.drawImage(img, 0, 0);
                         resolve(canvas);
                     };
+					img.onerror = (err) => {
+						reject("Failed to load the Image atlas. Error: " + err);
+					}
                     img.src = URL.createObjectURL(atlasFile);
                 },
             );
 
-            Promise.all([loadMcap, loadAtlas]).then((results) => {
+            Promise.all([loadMcap, loadAtlas])
+			
+			.then( results => {
+
+				const usesAudioAtlas = results[0].clips.some(c=>c.audioSprite);
+
+				if( usesAudioAtlas && !audioFile )
+				{
+					console.warn("This mcap file uses an audio atlas, but no audio atlas file was provided.");
+				 
+				}
+
+				if( !usesAudioAtlas && audioFile )
+				{
+					console.warn("This mcap file does not use an audio atlas, but an audio atlas file was provided.");
+				}
+
+				// if( usesAudioAtlas && audioFile )
+				// {
+				// 	return extractAudioSprites(audioFile, results[0].clips).then(()=>results)
+				// }
+
+				return results;
+			})
+			
+			.then((results) => {
                 const [mcap, atlasCanvas] = results;
 
-                mcap.unpackClips(atlasCanvas).then((unpackedClips) => {
+                mcap.unpackClips(atlasCanvas, audioFile).then((unpacked) => {
                     //...
                     currentState?.exit?.();
-                    clips = unpackedClips;
-                    rev++;
-                    repackClips();
+                    clips = unpacked.clips;
+
+					if( unpacked.audioAtlas )
+					{
+						audioPack = Promise.resolve(unpacked.audioAtlas);
+					}
+					else 
+					{
+						audioPack = undefined;
+					}
+
+					console.log("AUDIOS: ", unpacked.audioAtlas, clips)
+
+                    //rev++;
+					lastPackedRev = rev;
+					lastAudioSpriteRev=rev;
+
+                    //repackClips(); 
                     updateClipsCombo();
                     enter(states.initialState);
 
                     //@ts-ignore
                     atlasSizeSelector.select.value = mcap.atlasSize;
+					
 
                     paddingSelector.setValue(mcap.atlasPadding);
  
                 });
-            });
+            })
+			.catch( err => {
+				alert("Error opening the file: " + err.message);
+			});
         };
         input.click();
     }
@@ -721,6 +893,34 @@ const startEditor: DemoHandler["setup"] = (
 		window.open(CANONICAL_FACE_URL,"_blank")
 	}
 
+	/**
+	 * Downloads the Audios Sprites Atlas as a .wav file
+	 */
+	async function downloadSoundSprite() { 
+
+		const overlay = new Overlay();
+		overlay.setStatus("Downloading sound atlas....");
+
+		repackAudioSprite();
+
+		const soundAtlas = audioPack ? await audioPack : undefined; 
+		  
+		if( !soundAtlas ){
+			overlay.remove();
+			alert("No audio sprites found in the clips.");
+			return;
+		} 
+
+		// download atlas
+		const url = URL.createObjectURL(soundAtlas.blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'sounds-atlas.wav';
+		a.click();
+
+		overlay.remove(); 
+	}
+
 	function sourceFromVideoFile() {
 		// let user select a video file
 		console.log("PICK VIDEO")
@@ -737,10 +937,10 @@ const startEditor: DemoHandler["setup"] = (
 		input.click();
 	}
 
-	function sourceFromWebcam() {
+	function sourceFromWebcam( withAudio:boolean = false ) {
 		const overlay = new Overlay();
 		overlay.setStatus("Requesting camera access...");
-		tracker.setVideoFromWebcam().catch(err=>{
+		tracker.setVideoFromWebcam( withAudio ).catch(err=>{
 			console.error(err);
 
 			overlay.setStatus("Failed to access camera. Please allow camera access and try again.");
@@ -752,6 +952,10 @@ const startEditor: DemoHandler["setup"] = (
 		.finally(()=>{
 			overlay.remove();
 		});
+	}
+
+	function sourceFromWebcamWithAudio() {
+		sourceFromWebcam( true );
 	}
 
 	function sourceDefaultWomanFace() {
@@ -799,7 +1003,10 @@ const startEditor: DemoHandler["setup"] = (
                 recordedClip!.scale,
                 0.1,
             );
-            recordedClip!.frames.push(crop);
+            recordedClip!.frames.push({
+				...crop,
+				startTime:totalCaptureTime // current timestamp in clip's timeline
+			});
         }
     }
 
@@ -807,6 +1014,9 @@ const startEditor: DemoHandler["setup"] = (
 	 * This creates the texture atlas from the recorded clips.
 	 */
     async function createClipsAtlas() {
+		if( !clips.length ){ 
+			return;
+		}
         currentAtlas = buildMeshCapAtlas(
             clips,
             settings.atlasSize,
@@ -829,7 +1039,29 @@ const startEditor: DemoHandler["setup"] = (
    
 
         rebuildMetaInspector();
+
+		return currentAtlas;
     }
+
+	/**
+	 * Packs all audio clips into a single audio file ( wav )
+	 * @returns 
+	 */
+	function createAudioSpriteAtlas() {
+		const hasSounds = clips.some( clip=>clip.audioSprite!==undefined );
+		if( !hasSounds ){
+			//alert("No audio sprites found in the clips.");
+			return;
+		} 
+
+		// const audios = clips.map(c=>c.audioSprite?.domElement);
+
+		// if(!audios.length){
+		// 	return;
+		// }
+
+		return buildAudioSpriteAtlas(clips);
+	}
 
 	/**
 	 * This creates the modal that shows the clips that will be used to generate the texture atlas.
@@ -857,11 +1089,12 @@ const startEditor: DemoHandler["setup"] = (
 
             clipDiv.classList.add(styles.clip);
 
-            const duration = (clip.frames.length + 1) / clip.fps;
+            const duration = clip.duration;
             const minutes = Math.floor(duration / 60);
             const seconds = Math.floor(duration % 60);
+			const milliseconds = Math.floor((duration % 1) * 1000);
 
-            clipDiv.innerHTML = `clip: <strong>${clip.name}</strong> - ( total frames:<strong>${clip.frames.length}</strong> | Duration:<strong>${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}</strong> | FPS:<strong>${clip.fps}</strong> | scale:<strong>${clip.scale}</strong> )`;
+            clipDiv.innerHTML = `clip: <strong>${clip.name}</strong> - ( total frames:<strong>${clip.frames.length}</strong> | Duration:<strong>${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}.${milliseconds.toString().padStart(3, "0")}</strong> | FPS:<strong>${clip.fps}</strong> | scale:<strong>${clip.scale}</strong> )`;
             metadataInspector!.appendChild(clipDiv);
 
             // add to clipDiv button to rename and delete
@@ -935,7 +1168,7 @@ const startEditor: DemoHandler["setup"] = (
 	/**
 	 * Exports the metadata to a .mcap file.
 	 */
-    function exportMetadata() {
+    async function exportMetadata() {
         if (!clips.length) {
             alert("No metadata found...");
             return;
@@ -943,11 +1176,25 @@ const startEditor: DemoHandler["setup"] = (
 
         repackClips();
 
-        // add overlay...
-        const overlay = document.createElement("div");
-        overlay.classList.add(styles.overlay);
-        overlay.textContent = "Exporting metadata...";
-        document.body.appendChild(overlay);
+		const overlay = new Overlay();
+		overlay.setStatus("Packing data");
+		
+		repackAudioSprite();
+
+		const audioSprite = audioPack ? await audioPack : undefined; 
+
+		// If we have audio data, complete the audioSprite field of the clips
+
+		if( audioSprite )
+		{
+			console.log("UPDATE CLIPS SOUNDS....")
+			currentAtlas?.clips.forEach((clip, index) => {
+				console.log("UPDATE CLIPS SOUNDS....", index, audioSprite.sprites[index])
+				clip.audioSprite = {
+					start: audioSprite.sprites[index]![0], 
+				};
+			});
+		}
 
         currentAtlas!.save(true).finally(() => {
             overlay.remove();
@@ -1006,18 +1253,9 @@ const startEditor: DemoHandler["setup"] = (
     syncLiveMaterial = faceBind.update;
     update = syncLiveMaterial;
 
-    return (delta: number) => {
-        if (
-            tracker.video &&
-            tracker.video.videoWidth &&
-            tracker.video.videoHeight &&
-            tracker.faceTracker &&
-            recording
-        ) {
-            captureFrame(delta);
-        }
-
+    return (delta: number) => {  
         update?.(delta);
+		currentState?.update?.(delta);
     };
 };
 
@@ -1117,4 +1355,89 @@ class Overlay {
 			overlay.remove();
 		};
 	}
+}
+
+/**
+ * We combine all audio clips into a single audio sprite.
+ * The audio clips may be longer than needed, we willl also trim them.
+ * 
+ * @param audioElements 
+ * @returns 
+ */
+async function buildAudioSpriteAtlas(
+    clips: RecordedClip[],
+): Promise<AudioSpriteAtlas> {
+    const ctx = new AudioContext();
+    const sprites: AudioSpriteAtlas["sprites"] = [];
+
+    // 1. Fetch + decode all audio elements into AudioBuffers
+    const buffers: (AudioBuffer | undefined)[] = [];
+
+    for (const clip of clips) {
+        if (!clip.audioSprite) {
+            buffers.push(undefined);
+            continue;
+        }
+        const res = await fetch(clip.audioSprite.domElement!.src);
+        const arrayBuffer = await res.arrayBuffer();
+		const trimmedBuffer = await trimAudioBuffer(arrayBuffer, clip.duration)
+        const audioBuffer = trimmedBuffer; //await ctx.decodeAudioData(trimmedBuffer); 
+        buffers.push(audioBuffer);
+    }
+
+    // 2. Calculate total size
+    const sampleRate = ctx.sampleRate;
+    const numChannels = Math.max(
+        ...buffers.map((b) => b?.numberOfChannels ?? 0),
+    );
+    const totalSamples = buffers.reduce((acc, b) => acc + (b?.length ?? 0), 0);
+
+    // 3. Merge into one AudioBuffer
+    const combined = ctx.createBuffer(numChannels, totalSamples, sampleRate);
+    let offset = 0;
+
+    for (const buffer of buffers) {
+        if (!buffer) {
+            sprites.push(undefined);
+            continue;
+        }
+        const start = offset / sampleRate;
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const src = buffer.getChannelData(
+                ch < buffer.numberOfChannels ? ch : 0,
+            );
+            combined.getChannelData(ch).set(src, offset);
+        }
+
+        sprites.push([start, buffer.duration]);
+        offset += buffer.length;
+    }
+
+    ctx.close();
+
+    // 4. Encode to WAV
+    const wav = audioBufferToWav(combined);
+    const blob = new Blob([wav], { type: "audio/wav" });
+
+    return { blob, sprites };
+}
+
+async function trimAudioBuffer(arrayBuffer:ArrayBuffer, duration:number):Promise<AudioBuffer> {
+	const ctx = new AudioContext();
+	let trimmedBuffer:AudioBuffer;
+
+	try {
+		const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+		trimmedBuffer = ctx.createBuffer(audioBuffer.numberOfChannels, audioBuffer.sampleRate * duration, audioBuffer.sampleRate);
+		for(let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
+			const src = audioBuffer.getChannelData(ch).subarray(0, audioBuffer.sampleRate * duration);
+			trimmedBuffer.getChannelData(ch).set(src);
+		}  
+ 
+	} finally {
+		ctx.close();
+	}
+
+	return trimmedBuffer;
 }

@@ -1,6 +1,11 @@
 import { resolve } from 'path';
 import { defineConfig } from 'vite';
 
+/**
+ * Set to true to use the distributed files instead of the source files.
+ */
+const useModuleFromDist = false;
+
 export default defineConfig({
   root: '.',
   base: "/three-mediapipe-rig/",
@@ -22,11 +27,9 @@ export default defineConfig({
     }, 
   },
   resolve: {
-    alias: {
-	  "three-mediapipe-rig/meshcap": resolve(__dirname, "./src/meshcap/meshcap.ts"),
-      "three-mediapipe-rig": resolve(__dirname, "./src/module.ts"),
-	// "three-mediapipe-rig/meshcap": resolve(__dirname, "./dist/meshcap.js"),
-    // "three-mediapipe-rig": resolve(__dirname, "./dist/rigger.js"),
-    },
+	alias: {
+	  "three-mediapipe-rig/meshcap": resolve(__dirname, useModuleFromDist ? "./dist/meshcap.js" : "./src/meshcap/meshcap.ts"),
+	  "three-mediapipe-rig": resolve(__dirname, useModuleFromDist ? "./dist/rigger.js" : "./src/module.ts"),
+	} 
   },
 });

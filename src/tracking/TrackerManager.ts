@@ -175,6 +175,7 @@ export async function setupTracker(config?: Partial<TrackerConfig>) : Promise<Tr
 		video.style.height = "auto"; 
 		video.style.maxWidth = "100%"; 
 		video.style.display = "block"; 
+		video.muted = false
 
         if ($cfg.debugVideo) {
             video.src = $cfg.debugVideo;
@@ -194,10 +195,19 @@ export async function setupTracker(config?: Partial<TrackerConfig>) : Promise<Tr
         }
 
         video.addEventListener("loadeddata", () => {
-            video!.width = video!.videoWidth * $cfg.displayScale;
-            video!.height = video!.videoHeight * $cfg.displayScale;
-            canvasElement.width = video!.videoWidth;
-            canvasElement.height = video!.videoHeight;
+			 const vw = video!.videoWidth;
+			  const vh = video!.videoHeight;
+
+			  const maxW = 600; 
+			  const maxH = 600; 
+
+			  const scale = Math.min(maxW / vw, maxH / vh, 1);
+
+			  video!.width = vw * scale * ($cfg.displayScale ?? 1);
+			  video!.height =  vh * scale * ($cfg.displayScale ?? 1);
+ 
+            canvasElement.width = video!.width;
+            canvasElement.height = video!.height;
             canvasElement.style.height = "auto";
             canvasElement.style.width = video!.width + "px";
             canvasElement.style.maxWidth = "100%"; 
@@ -240,6 +250,18 @@ export async function setupTracker(config?: Partial<TrackerConfig>) : Promise<Tr
 
 	let webcamStopper:VoidFunction | undefined;
 
+	function setEnabled( enabled:boolean ) {
+		if(!video) return;
+		if (video.srcObject) {
+			// webcam
+			const tracks = (video.srcObject as MediaStream).getTracks();
+			tracks.forEach(t => t.enabled = enabled);
+		} else {
+			if(enabled) video.play();
+			else video.pause();
+		}
+	}
+
     return {
         poseTracker,
         handsTracker,
@@ -251,7 +273,7 @@ export async function setupTracker(config?: Partial<TrackerConfig>) : Promise<Tr
 		domElement: viewport,
 
 		
-        start: async () => {
+        start: async ( withAudio:boolean = false ) => {
 			let stopped = false;
 
             if (!hasGetUserMedia()) {
@@ -298,7 +320,7 @@ export async function setupTracker(config?: Partial<TrackerConfig>) : Promise<Tr
 
 			async function startCamera(video: HTMLVideoElement): Promise<void> {
 			 
-			    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+			    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: withAudio });
 			    video.srcObject = stream;
 			    await video.play();
 
@@ -337,9 +359,18 @@ export async function setupTracker(config?: Partial<TrackerConfig>) : Promise<Tr
 			}
 
 			return {
+				getStream: () => stream,
 				stop: webcamStopper
 			}
         },
+
+		pause: () => {
+			setEnabled(false);
+		},
+
+		resume: () => {
+			setEnabled(true);
+		},
 
         
         bind: ( rig: THREE.Object3D, magging?:BoneMap ) => {
@@ -410,7 +441,7 @@ export async function setupTracker(config?: Partial<TrackerConfig>) : Promise<Tr
 		},
 
 		
-		async setVideoFromWebcam():Promise<{ stop:VoidFunction}> {
+		async setVideoFromWebcam( withAudio = false ):Promise<VideoHandler> {
 			if (!video) {
                 initializeVideo();
             }
@@ -419,11 +450,16 @@ export async function setupTracker(config?: Partial<TrackerConfig>) : Promise<Tr
 				throw new Error("Webcam already started"); 
 			};
 
-			return await (this as TrackerHandler).start();
+			return await (this as TrackerHandler).start(withAudio);
 		}
 
 
     };
+}
+
+export type VideoHandler = {
+	stop:VoidFunction,
+	getStream: () => MediaStream|undefined
 }
 
 export type TrackerHandler = {
@@ -453,7 +489,17 @@ export type TrackerHandler = {
 	/**
 	 * Start the webcam feed. This must be initiated by a user triggered event ( a click on a button ) due to security reasons. 
 	 */
-	start: () => Promise<{ stop:VoidFunction}>;
+	start: ( withAudio?:boolean ) => Promise<VideoHandler>;
+
+	/**
+	 * Pauses the tracking.
+	 */
+	pause: VoidFunction;
+
+	/**
+	 * Resumes the tracking.
+	 */
+	resume: VoidFunction;
 
 	/**
      * Binds the bones of the rig to the landmarks provided by media pipe.
@@ -472,5 +518,5 @@ export type TrackerHandler = {
 	 * Starts the webcam feed.
 	 * @returns A function to stop the webcam feed.
 	 */
-	setVideoFromWebcam: () => Promise<{ stop:VoidFunction}>;
+	setVideoFromWebcam: ( withAudio?:boolean ) => Promise<VideoHandler>;
 };
