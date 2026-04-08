@@ -23,6 +23,22 @@ export const charactersDemo: DemoHandler = {
         scene: Scene,
         tracker: TrackerHandler,
     ) => {
+
+
+
+		document.querySelector("#credits > div:last-child")!.innerHTML = `<div>
+				Young Lara by <a href="https://sketchfab.com/3d-models/young-lara-croft-tomb-raider-4-3683b756078947e28c61cb3b06b7c37d">Bandinopla</a>
+			</div>
+			<div>
+				Head Scan by Unknown ( uploaded by <a href="https://sketchfab.com/3d-models/bearded-man-60947a1819a1407685cb4332e894e585">kand8998</a>)
+			</div>
+			<div>
+				Tai Lung (tiger) by <a href="https://sketchfab.com/3d-models/tai-lung-kung-fu-panda-chi-master-048995f379e74ab496415f9d2054f7b8">Guilherme Navarro</a>
+			</div>
+			<div>
+				Woman video ref by <a href="https://grok.com/imagine/">Grok</a>
+			</div>`
+
         let laraBind: RecordableBindingHandler | undefined;
         let headBind: RecordableBindingHandler | undefined;
         let tigerBind: RecordableBindingHandler | undefined;

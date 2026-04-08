@@ -194,7 +194,7 @@ export const gameYoutubers: StandaloneDemoHandler = {
 					scene.add(card);
 					//bbox.getSize( card.scale );
 					card.scale.multiplyScalar(2)
-					mesh.scale.multiplyScalar(1.2)
+					mesh.scale.multiplyScalar(2.2)
  
 					card.root.attach(mesh);  
 	 

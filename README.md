@@ -10,6 +10,8 @@ The motion from the webcam will be applied to a skeleton. Angle based so it work
 This will run 3 models: face, body, hands. So expect a FPS drop.
 
 ## Explore the demos:
+- Open the [PoseCap Editor](https://github.com/bandinopla/three-mediapipe-rig/blob/main/POSECAP.md), examples using it:
+	- [Bandinopla chibi](https://bandinopla.github.io/three-mediapipe-rig/?demo=bandinopla-chibi)  ( pose + face )
 - Open the [MeshCap Editor](https://github.com/bandinopla/three-mediapipe-rig/blob/main/MESHCAP.md), examples using it:
 	- [Loading .mcap files](https://bandinopla.github.io/three-mediapipe-rig/?demo=load-meshcap-files)
 	- [Clips with Audio: Memory game](https://bandinopla.github.io/three-mediapipe-rig/?demo=game-youtubers)
@@ -20,6 +22,7 @@ This will run 3 models: face, body, hands. So expect a FPS drop.
 ---
 
 ## Table of Contents
+- New! [**PoseCap Editor**](https://github.com/bandinopla/three-mediapipe-rig/blob/main/POSECAP.md)
 - New! [**MeshCap Editor**](https://github.com/bandinopla/three-mediapipe-rig/blob/main/MESHCAP.md)
 - [Features](#features)
 - [Installation](#installation)

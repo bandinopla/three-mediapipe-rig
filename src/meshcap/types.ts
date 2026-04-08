@@ -1,7 +1,7 @@
 import { Mesh, Texture, Vector3Like } from "three"
 import { AudioSpriteAtlas } from "./audio"
 import { MeshCapMaterialHandler } from "./material"
-import { NodeMaterial } from "three/webgpu"
+import { Matrix4, NodeMaterial } from "three/webgpu"
 
 
 
@@ -24,8 +24,24 @@ export interface Clip  {
 }
 
 
+export type FrameBase = {
+
+	/**
+	 * This is the bounding box in atlas UV space in which the landmarks are expressed.
+	 */
+	cropUV: UVCoord, 
+	startTime:number, 
+
+	/**
+	 * The general transformation of the face in this frame.
+	 */
+	transformMatrix?:Matrix4 
+}
+
 export interface RecordedClip extends Clip {
-	frames:{ canvas:HTMLCanvasElement, cropUV: UVCoord, startTime:number }[],
+	frames:(FrameBase & { 
+		canvas:HTMLCanvasElement,  
+	})[],
 	audioSprite?:{
 		domElement?:HTMLAudioElement,
 
@@ -37,14 +53,16 @@ export interface RecordedClip extends Clip {
 }
 
 export interface MCapClip extends Clip {
-	frames: { cropUV:UVCoord, frameUV:UVCoord, startTime:number }[]
+	frames: (FrameBase & { 
+		frameUV:UVCoord, 
+	})[]
 }
 
 export interface MCapFile {
 	clips: MCapClip[];
 	version: number;
 	atlasSize:number,
-	atlasPadding:number,
+	atlasPadding:number, 
 
 	/**
 	 * Extract the clips from the atlas image using the metadata as a guide to know where the clips are.
@@ -82,7 +100,16 @@ export interface MeshCapAtlas {
 	atlasSize:number
 
 	/**
-	 * 
+	 * Save the cuyrrent meshcap as a .mcap file.
+	 * @param downloadFile If true, the file will be downloaded to the user's computer.
+	 * @returns 
 	 */
 	save( downloadFile:boolean ):Promise<Blob>
+
+	/**
+	 * Triggers a download of the atlas texture
+	 * @param phrase Optional phrase to use to perform a simple obfuscation of the texture.
+	 * 			If the phrase is not provided, the atlas will not be obfuscated. If you use one, you will have to provide it once again on your app or game when you try to load it calling `createMaterialHandlerOnMesh` by defining the `onAtlasKeyPhraseRequired` hook, which is a functionthat should return the phrase.
+	 */
+	saveImageAtlas( phrase?:string, asJpg?:boolean ):Promise<void>
 }

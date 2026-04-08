@@ -7,6 +7,7 @@ import { faceUVDemo } from "./face-uv-demo";
 import { charactersDemo } from "./characters-demo";
 import { loadMeshcapFiles } from "./load-meshcap-files";
 import { gameYoutubers } from "./game-youtubers";
+import { bandinoplaChibiExample } from "./bandinopla-chibi";
 
 // — Renderer —
 const renderer = new THREE.WebGPURenderer({ antialias: true });
@@ -29,9 +30,13 @@ if( $querystring.get("editor")=="meshcap")
 {
 	demo = (await import("./face-clip-editor")).faceClipEditor;
 }
+else if( $querystring.get("editor")=="posecap")
+{
+	demo = (await import("./posecap/pose-clip-editor")).poseClipEditor;
+}
 else 
 {
-	[handsDemo, faceUVDemo, charactersDemo, loadMeshcapFiles, gameYoutubers].forEach( d =>{
+	[handsDemo, faceUVDemo, charactersDemo, loadMeshcapFiles, gameYoutubers, bandinoplaChibiExample].forEach( d =>{
 		if( demoName==d.name )
 		{
 			demo = d;
@@ -87,7 +92,7 @@ await Promise.all([renderer.init(), "trackerConfig" in demo ? setupTracker(demo.
 		directional.shadow.camera.right = 10;
 		directional.shadow.camera.top = 10;
 		directional.shadow.camera.bottom = -10;
-		directional.shadow.bias = -0.001;
+		directional.shadow.bias = -0.0003;
         scene.add(directional);
 
 		// @ts-ignore
@@ -99,8 +104,8 @@ await Promise.all([renderer.init(), "trackerConfig" in demo ? setupTracker(demo.
 			 
 			const delta = clock.update(time).getDelta();  
 			
-			demoHandler?.(delta);
-			renderer.render(scene, camera);
+			if(demoHandler?.(delta)===void 0)
+				renderer.render(scene, camera);
 			//stats.update();
 		})  
 		

@@ -1,11 +1,12 @@
 import { DemoHandler } from "./demo-type";
 import { Inspector } from "three/examples/jsm/inspector/Inspector.js";
-import { NormalizedLandmark } from "@mediapipe/tasks-vision";
+import { FaceLandmarker, NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { Mesh } from "three";
 
 import {
 	AmbientLight,
     BackSide,
+    BufferGeometry,
     CanvasTexture,
     Color,
     LinearToneMapping,
@@ -36,19 +37,24 @@ import {
     buildMeshCapAtlas,
     loadMeshCapFile,
     MeshCapAtlas,
-    RecordedClip,
-	createMeshCapMaterial,
+    RecordedClip, 
     MeshCapMaterialHandler,
 	AudioSpriteAtlas,
-	audioBufferToWav
+	audioBufferToWav,
+	readAsMCapFile,
+	loadMeshcapAtlas, 
 } from "three-mediapipe-rig/meshcap";   
 
 /**
  * Changelog:
  * - 0.0.1 : first release
  * - 0.0.2 : Added audio recording 
+ * - 0.0.3 : + Added background masking on recording
+ * 			 + Added option to save atlas as JPG
+ * 			 + Option to obfuscate the atlas 
+ *           + the face transform matrix is now also recorded
  */
-const EDITOR_VERSION = "0.0.2";
+const EDITOR_VERSION = "0.0.3";
 
 const txt = {
     start_recording: "⦿ Start recording",
@@ -63,7 +69,7 @@ const txt = {
     frame_padding: "Frame Padding (px)",
     clip: "Clip",
     btnMetadata: "Metadata ( .mcap )",
-    btnAtlasTexture: "Image Atlas ( .png )",
+    btnAtlasTexture: "Texture Atlas",
     btnCloseAtlasTexture: "✕ Close Atlas View",
     panelTitleExport: "Save",
     panelTitleInspect: "View / Preview",
@@ -82,6 +88,9 @@ const txt = {
 	btnCopyClips:"Copy clips dictionary",
 	btnDownloadCanonicalFaceMesh:"Canonical face mesh (.glb)",
 	btnDownloadSoundSprite:"Audios Atlas (.wav)",
+	btnDirtifyTexture:"Apply Simple Atlas Obfuscation",
+	btnDownloadAtlasAsJpg:"Atlas as JPG",
+	btnDownloadAtlasAsPng:"Atlas as PNG",
 }; 
 
 interface AppState {
@@ -106,7 +115,7 @@ export const faceClipEditor: DemoHandler = {
     trackerConfig: {
         onlyFace: true,
         debugVideo: DEFAULT_VIDEO_SOURCE,
-        drawLandmarksOverlay: false,
+        drawLandmarksOverlay: true,
         displayScale: 1,
     },
     setup: (renderer, camera, scene, tracker) => {
@@ -194,18 +203,22 @@ const startEditor: DemoHandler["setup"] = (
     scene,
     tracker,
 ) => {
+
+	/**
+	 * Store the last known atlas obfuscation phrase.
+	 * This is used to automatically fill the prompt when the user tries to export an obfuscated atlas.
+	 */
+	let lastKnownAtlasObfuscationPhrase:string | undefined;
     let faceMesh: Mesh | undefined;
     let atlasView: Mesh | undefined;
     let liveMaterial: MeshPhysicalNodeMaterial | undefined;
     let replayMaterial: MeshCapMaterialHandler | undefined;
     let syncLiveMaterial: ((delta: number) => void) | undefined;
-    let update: ((delta: number) => void) | undefined;
+    let update: ((delta: number) => void) | undefined; 
 
     let inspector = new Inspector();  
     renderer.inspector = inspector;
-    inspector.init();
-
-	
+    inspector.init(); 
 
     let metadataInspector: HTMLDivElement | undefined;
 
@@ -228,6 +241,14 @@ const startEditor: DemoHandler["setup"] = (
         atlasSize: 2048,
         padding: 1,
         ambientLight: new AmbientLight(0xffffff, 0.1),
+		maskBg:false,
+
+		/**
+		 * If the texture atlas should be obfuscated when exported.
+		 * 
+		 * If true, the user will be prompted to enter a key phrase when exporting the atlas.
+		 */
+		dirtify:false,
     };
 
     scene.add(settings.ambientLight);
@@ -264,7 +285,8 @@ const startEditor: DemoHandler["setup"] = (
         export: () => {}, 
         inspectMetadata: () => openMetadataInspector(), 
         inspectAtlas: () => currentState?.onClickInspectAtlas?.(),  
-        exportAtlasTexture,
+        exportAtlasTexture: exportAtlasTexture.bind(null, false),
+        exportAtlasTextureAsJpg: exportAtlasTexture.bind(null, true),
         exportMetadata,
         open,
         howToUse: openTutorialModal,
@@ -348,6 +370,7 @@ const startEditor: DemoHandler["setup"] = (
                 btnReplay.name(txt.replay);
                 faceMesh!.material = liveMaterial!;
                 update = syncLiveMaterial;
+				 
             },
         },
 
@@ -454,7 +477,7 @@ const startEditor: DemoHandler["setup"] = (
 					 
 	                recording = false;
 	                rev++;
-	                repackClips();
+	                repackClips();   
 				}
             }, 
 
@@ -467,9 +490,11 @@ const startEditor: DemoHandler["setup"] = (
                 btnReplay.name(txt.stopReplay);  
 
                 replayMaterial!.gotoAndLoop(settings.currentClipIndex, (offset:number)=>{
-					recordedClip!.audioSprite!.domElement!.pause();
-					recordedClip!.audioSprite!.domElement!.currentTime = 0; //offset;
-					recordedClip!.audioSprite!.domElement!.play();
+					if( recordedClip?.audioSprite?.domElement){
+						recordedClip.audioSprite.domElement.pause();
+						recordedClip.audioSprite.domElement.currentTime = 0; //offset;
+						recordedClip.audioSprite.domElement.play();
+					}
 				});
 
                 faceMesh!.material = replayMaterial!.material;
@@ -585,6 +610,19 @@ const startEditor: DemoHandler["setup"] = (
         },
     };
 
+	//
+	// If the user leaves the tab, we go back to the initial state.
+	// Because I've noticed that if recording, the recording will freeze otherwise.
+	//
+	document.addEventListener("visibilitychange", () => {
+		if (document.hidden) {
+			// user left / minimized / switched tab
+			enter(states.initialState);
+		} else {
+			// user came back
+		}
+	});
+
     const comboOptions = { "--- new clip ---": -1 };
     const currentClipName = selectedClipActions
         .add(settings, "currentClipIndex", comboOptions)
@@ -633,11 +671,17 @@ const startEditor: DemoHandler["setup"] = (
 
     const fps = captureSettings.add(settings, "fps", 1, 60, 1).name("FPS").onChange( (v)=>{
 		captureInterval = 1 / v;
-	});
+	}); 
 
     const scale = captureSettings
         .add(settings, "scale", 0.1, 1, 0.01)
         .name("Frame Scale");
+
+	const maskBg = captureSettings.add(settings, "maskBg" ).onChange( (v)=>{ 
+		rev++; 
+		repackClips();
+	}).name("Hide Background");
+
     const atlasSizeSelector = mainactions
         .add(settings, "atlasSize", [512, 1024, 2048, 4096, 8192])
         .name("Width")
@@ -714,7 +758,17 @@ const startEditor: DemoHandler["setup"] = (
     selectedClipActions.add(actions, "deleteClip").name(txt.deleteClip);
 
     exportSettings.add(actions, "exportMetadata").name(txt.btnMetadata);
-    exportSettings.add(actions, "exportAtlasTexture").name(txt.btnAtlasTexture);
+
+	const dirtifyCheck = exportSettings.add(settings, "dirtify").name(txt.btnDirtifyTexture);
+	function setDirtifySetting(bool:boolean ) {
+
+		settings.dirtify = bool;
+		// @ts-ignore
+		dirtifyCheck.domElement.querySelector("input").checked = bool; 
+	}
+
+    exportSettings.add(actions, "exportAtlasTexture").name(txt.btnDownloadAtlasAsPng);
+	exportSettings.add(actions, "exportAtlasTextureAsJpg").name(txt.btnDownloadAtlasAsJpg);
 	exportSettings.add(actions, "downloadSoundSprite").name(txt.btnDownloadSoundSprite);
 
 	exportSettings.add(actions, "copyClipsDictionary").name(txt.btnCopyClips);
@@ -727,7 +781,7 @@ const startEditor: DemoHandler["setup"] = (
         .name(txt.btnAtlasTexture);
 
     function open() {
-        const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "avif"];
+        const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "avif", "mcatlas"];
 
         /**
          * We must open 2 files, the .mcap and the atlas texture.
@@ -736,7 +790,7 @@ const startEditor: DemoHandler["setup"] = (
         input.type = "file";
         input.multiple = true;
         input.accept =
-            ".mcap," + IMAGE_EXTENSIONS.map((e) => "image/" + e).join(",") + ",audio/*";
+            ".mcap,.mcatlas," + IMAGE_EXTENSIONS.map((e) => "image/" + e).join(",") + ",audio/*";
         input.onchange = (e: Event) => {
             const files = input.files;  
 
@@ -772,25 +826,42 @@ const startEditor: DemoHandler["setup"] = (
 
             const loadMcap = loadMeshCapFile(mcapFile); 
 
-            const loadAtlas = new Promise<HTMLCanvasElement>(
-                (resolve, reject) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        const canvas = document.createElement("canvas");
-                        canvas.width = img.width;
-                        canvas.height = img.height;
-                        const ctx = canvas.getContext("2d")!;
-                        ctx.drawImage(img, 0, 0);
-                        resolve(canvas);
-                    };
-					img.onerror = (err) => {
-						reject("Failed to load the Image atlas. Error: " + err);
-					}
-                    img.src = URL.createObjectURL(atlasFile);
-                },
-            );
+            // const loadAtlas = new Promise<HTMLCanvasElement>(
+            //     (resolve, reject) => {
+            //         const img = new Image();
+            //         img.onload = () => {
+            //             const canvas = document.createElement("canvas");
+            //             canvas.width = img.width;
+            //             canvas.height = img.height;
+            //             const ctx = canvas.getContext("2d")!;
+            //             ctx.drawImage(img, 0, 0);
+            //             resolve(canvas);
+            //         };
+			// 		img.onerror = (err) => {
+			// 			reject("Failed to load the Image atlas. Error: " + err);
+			// 		}
+            //         img.src = URL.createObjectURL(atlasFile);
+            //     },
+            // ); 
+			let atlas: Promise<HTMLImageElement|File> = Promise.resolve(atlasFile);
 
-            Promise.all([loadMcap, loadAtlas])
+			//
+			// this is the obfuscated atlas file
+			//
+			if( atlasFile.name.endsWith(".mcatlas") )
+			{
+				const key = prompt("Please provide the key phrase for the obfuscated atlas:");
+				if( !key )
+				{
+					throw new Error("No key phrase provided.");
+				}
+				lastKnownAtlasObfuscationPhrase = key;
+				setDirtifySetting(true)
+				
+				atlas = loadMeshcapAtlas(atlasFile, key).then( tex=>tex.image );
+			}
+
+            Promise.all([loadMcap, atlas])
 			
 			.then( results => {
 
@@ -817,6 +888,7 @@ const startEditor: DemoHandler["setup"] = (
 			
 			.then((results) => {
                 const [mcap, atlasCanvas] = results;
+ 
 
                 mcap.unpackClips(atlasCanvas, audioFile).then((unpacked) => {
                     //...
@@ -832,7 +904,7 @@ const startEditor: DemoHandler["setup"] = (
 						audioPack = undefined;
 					}
 
-					console.log("AUDIOS: ", unpacked.audioAtlas, clips)
+					//console.log("AUDIOS: ", unpacked.audioAtlas, clips)
 
                     //rev++;
 					lastPackedRev = rev;
@@ -923,14 +995,14 @@ const startEditor: DemoHandler["setup"] = (
 
 	function sourceFromVideoFile() {
 		// let user select a video file
-		console.log("PICK VIDEO")
+		//console.log("PICK VIDEO")
 		const input = document.createElement("input");
 		input.type = "file";
 		input.accept = "video/*";
 		input.onchange = (e: Event) => {
 			const file = input.files?.[0];
 			if (!file) return;
-			console.log( "VIDEO", file )
+			//console.log( "VIDEO", file )
 			tracker.setVideoFromSource(file);
 			
 		}
@@ -993,6 +1065,7 @@ const startEditor: DemoHandler["setup"] = (
         timeSinceLastCapture = 0;
 
         const frameLandmarks = tracker.faceTracker!.lastKnownLandmarks;
+		
         if (frameLandmarks?.length) {
             capturedFrames++;
             recordedClip!.landmarks.push(frameLandmarks);
@@ -1002,10 +1075,17 @@ const startEditor: DemoHandler["setup"] = (
                 frameLandmarks,
                 recordedClip!.scale,
                 0.1,
+				settings.maskBg, 
+				faceMesh!.geometry
             );
             recordedClip!.frames.push({
 				...crop,
-				startTime:totalCaptureTime // current timestamp in clip's timeline
+				startTime:totalCaptureTime ,// current timestamp in clip's timeline
+
+				//
+				// face orientation and such..
+				//
+				transformMatrix: tracker.faceTracker!.lastKnownFacialTransformationMatrix!.clone()
 			});
         }
     }
@@ -1023,20 +1103,35 @@ const startEditor: DemoHandler["setup"] = (
             settings.padding,
         );
 
+		// simulate reading it as if it was laoded from an .mcap 
+		// ( to test how it will really play once values are compressed/decompressed )
+		
+		const mcapAsFile = await readAsMCapFile( currentAtlas );
+
         const atlasTexture = new CanvasTexture(currentAtlas.canvas);
         atlasTexture.flipY = false;
-        atlasTexture.colorSpace = SRGBColorSpace;
+        atlasTexture.colorSpace = SRGBColorSpace; 
+		 
 
         if (replayMaterial) {
             replayMaterial.dispose();
-        }
+        } 
 
-        replayMaterial = createMeshCapMaterial(
-            atlasTexture,
-            currentAtlas.clips,
-            faceMesh!
-        ); 
-   
+		//
+		// mat is created this way due to the UI calling this function synchronously
+		// and the material creationbeing async. The UI assigns the liveMaterial to the mesh and by the time
+		// this task ends, it is overriten with the replayMaterial, which is not what we wanted.
+		//
+		const mat = new MeshPhysicalNodeMaterial();
+
+		replayMaterial = mcapAsFile.createMaterialHandlerOnMesh( faceMesh!, atlasTexture, mat )
+		
+
+        // replayMaterial = createMeshCapMaterial(
+        //     atlasTexture,
+        //     currentAtlas.clips,
+        //     faceMesh!
+        // );  
 
         rebuildMetaInspector();
 
@@ -1151,7 +1246,7 @@ const startEditor: DemoHandler["setup"] = (
 	/**
 	 * Exports the texture atlas to a PNG file.
 	 */
-    function exportAtlasTexture() {
+    function exportAtlasTexture( asJpg=false ) {
         if (!clips.length) {
             alert("No clips found...");
             return;
@@ -1159,10 +1254,21 @@ const startEditor: DemoHandler["setup"] = (
 
         repackClips();
 
-        const link = document.createElement("a");
-        link.download = "atlas.png";
-        link.href = currentAtlas!.canvas.toDataURL();
-        link.click();
+        // -- check if the user wants to obfuscate the atlas....
+
+		let magic:string|undefined;
+
+		if( settings.dirtify )
+		{
+			magic = prompt("Enter magic phrase:", lastKnownAtlasObfuscationPhrase??"") ?? undefined;
+			
+			if(!magic ) return;
+		
+			lastKnownAtlasObfuscationPhrase = magic;
+		}
+
+        
+		currentAtlas!.saveImageAtlas( magic, asJpg );
     }
 
 	/**
@@ -1187,9 +1293,9 @@ const startEditor: DemoHandler["setup"] = (
 
 		if( audioSprite )
 		{
-			console.log("UPDATE CLIPS SOUNDS....")
+			//console.log("UPDATE CLIPS SOUNDS....")
 			currentAtlas?.clips.forEach((clip, index) => {
-				console.log("UPDATE CLIPS SOUNDS....", index, audioSprite.sprites[index])
+				//console.log("UPDATE CLIPS SOUNDS....", index, audioSprite.sprites[index])
 				clip.audioSprite = {
 					start: audioSprite.sprites[index]![0], 
 				};
@@ -1252,12 +1358,34 @@ const startEditor: DemoHandler["setup"] = (
 
     syncLiveMaterial = faceBind.update;
     update = syncLiveMaterial;
+ 
+    return (delta: number) => {   
 
-    return (delta: number) => {  
         update?.(delta);
 		currentState?.update?.(delta);
+
+		// // /////////////////////////////////////////////////////////
+		// if( tracker.faceTracker?.lastKnownLandmarks.length )
+		// {
+		// 	f = true;
+		// 	const values = tracker.faceTracker.lastKnownLandmarks.map( l=>l.x );
+		// 	const a = new Uint16Array(values.map(v => Math.round(v * 1000)));
+		// 	const b = new Uint16Array(values.map(v => Math.round(v * 10000)));
+		// 	const c = new Uint16Array(values.map(v => Math.round(v * 65535)));
+
+		// 	import('fflate').then((fflate) => {
+		// 		const compA = fflate.deflateSync(new Uint8Array(a.buffer), { level: 9 });
+		// 		const compB = fflate.deflateSync(new Uint8Array(b.buffer), { level: 9 });
+		// 		const compC = fflate.deflateSync(new Uint8Array(c.buffer), { level: 9 });
+
+		// 		console.log("COMPRESSION RESULTS")
+		// 		console.log("A", compA.length, "B", compB.length, "C", compC.length);
+		// 	});
+		// }
     };
 };
+
+ 
 
 /**
  *
@@ -1272,6 +1400,8 @@ function cropFaceFromLandmarks(
     landmarks: NormalizedLandmark[], // mediapipe landmarks (normalized 0-1)
     scale: number = 1,
     padding: number = 0.1, // extra padding around the face bounding box (0.1 = 10%)
+	maskBg:boolean = false, 
+	faceGeometry:BufferGeometry
 ) {
     const videoWidth = video.videoWidth;
     const videoHeight = video.videoHeight;
@@ -1306,7 +1436,62 @@ function cropFaceFromLandmarks(
 
     const ctx = canvas.getContext("2d")!;
 
-    // Crop from video and draw into canvas
+	
+
+
+	// FaceLandmarker.FACE_LANDMARKS_FACE_OVAL
+
+	// -- hide the background potentially saving pixels when compressing
+	if( maskBg )
+	{  
+		ctx.globalCompositeOperation = "source-over";
+
+		const pos2index = faceGeometry.getAttribute("landmarkIndex");
+		const triangles = faceGeometry.index!; 
+
+
+		ctx.fillStyle = "white";   
+		 
+		for (let i = 0; i < triangles.count; i += 3) {
+
+		  const ia = triangles.getX(i);
+		  const ib = triangles.getX(i+1);
+		  const ic = triangles.getX(i+2);
+
+		  const a = landmarks[pos2index.getX(ia)];
+		  const b = landmarks[pos2index.getX(ib)];
+		  const c = landmarks[pos2index.getX(ic)];
+
+		  const ax = ((a.x * videoWidth) - srcX) * scale;
+		  const ay = ((a.y * videoHeight) - srcY) * scale;
+
+		  const bx = ((b.x * videoWidth) - srcX) * scale;
+		  const by = ((b.y * videoHeight) - srcY) * scale;
+
+		  const cx = ((c.x * videoWidth) - srcX) * scale;
+		  const cy = ((c.y * videoHeight) - srcY) * scale;
+
+		  
+		  ctx.beginPath();
+		  ctx.moveTo(ax, ay);
+		  ctx.lineTo(bx, by);
+		  ctx.lineTo(cx, cy);
+		  ctx.closePath();
+		  ctx.fill();
+
+		  ctx.lineWidth = 5;
+		  ctx.lineJoin = "round"; 
+		  ctx.lineCap = "round";
+		  ctx.stroke();
+		}   
+
+		ctx.filter = "none";
+		ctx.globalCompositeOperation = "source-in";  
+		
+	}
+
+
+
     ctx.drawImage(
         video,
         srcX,
@@ -1318,6 +1503,11 @@ function cropFaceFromLandmarks(
         canvas.width,
         canvas.height, // destination rect (into canvas)
     );
+
+	ctx.globalCompositeOperation = "source-over"; // reset
+ 
+	// Crop from video and draw into canvas
+    
 
     return {
         canvas,
@@ -1411,6 +1601,7 @@ async function buildAudioSpriteAtlas(
         }
 
         sprites.push([start, buffer.duration]);
+		//console.log("Packed audio clip:", start, buffer.duration)
         offset += buffer.length;
     }
 

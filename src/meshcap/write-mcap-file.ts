@@ -8,8 +8,37 @@ import { MeshCapAtlas } from "./types";
 import { FACE_LANDMARKS_COUNT } from "../tracking/util/face-tracker-utils";
 
 
-export async function atlasToMCap(atlas: MeshCapAtlas, useRelativeLandmarks:boolean = true ) {
+/**
+ * generates an .mcap binary from the atlas
+ * @param atlas 
+ * @param useRelativeLandmarks Used internally to save space. 
+ * @returns 
+ */
+export async function atlasToMCap(atlas: MeshCapAtlas, useRelativeLandmarks:boolean = true ) { 
+	const buffer = await atlasToMCapBuffer(atlas, useRelativeLandmarks);
+
+	return new Promise<Blob>((resolve, reject)=>{
+
+		deflate(new Uint8Array(buffer), { level:9 }, ( err, result )=>{
+		
+			if( err ) return reject(err);
+			
+			const binBlob = new Blob([result as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' });
+
+			resolve(binBlob); 
+		}); 
+	}) 
+}
+
+/**
+ * generates an .mcap array buffer. Used for simulating ( in the meshcap editor ) opening the file in a real life situation
+ * @param atlas 
+ * @param useRelativeLandmarks Used internally to save space. 
+ * @returns 
+ */
+export async function atlasToMCapBuffer(atlas: MeshCapAtlas, useRelativeLandmarks:boolean = true ) {
     const encoder = new TextEncoder();
+	const totalClips = atlas.clips.length;
     const encodedIds = atlas.clips.map( clip=>encoder.encode(clip.name )); 
 
     // Calculate total size needed
@@ -17,7 +46,7 @@ export async function atlasToMCap(atlas: MeshCapAtlas, useRelativeLandmarks:bool
 	const entriesSize = encodedIds.reduce((sum, id, i) => {
 	    const frameCount = atlas.clips[i].frames.length;
 	    const idSize = 1 + id.byteLength;           // 1 byte length + id bytes
-	    const frameCountSize = 1;                    // uint16 frame count
+	    const frameCountSize = 2;                    // uint16 frame count
 		const fpsSize = 1;
 		const scaleSize = 1;
 		const aspectRatioSize = 1; 
@@ -29,7 +58,7 @@ export async function atlasToMCap(atlas: MeshCapAtlas, useRelativeLandmarks:bool
 
 	    return sum + idSize + frameCountSize + fpsSize + scaleSize + aspectRatioSize +
 		
-		( useRelativeLandmarks? 
+		( useRelativeLandmarks && MCAP_FILE_VERSION<3? 
 			(frameCropInfoSize + landmarksSize) + (frameCropInfoSize + FACE_LANDMARKS_COUNT * (1+1+1)) * (frameCount-1) 
 
 			: (frameCropInfoSize + landmarksSize ) * frameCount );
@@ -37,15 +66,22 @@ export async function atlasToMCap(atlas: MeshCapAtlas, useRelativeLandmarks:bool
 
 	// if clip has no audio we will store a "0" byte to indicate that.
 	// otherwise we store the start and duration of the audio sprite.
-	const extraDataSize = atlas.clips.reduce((sum, clip) => {
+	const audioDataSize = atlas.clips.reduce((sum, clip) => {
 		return sum + 2+2; // sound start timein atlas + duration
 	}, 0);
 
 	const framesStartTimesSize = atlas.clips.reduce((sum, clip) => {
-		return sum + (clip.frames.length * 1); //1 byte for frame start time delta
+		return sum + (clip.frames.length * 2); //2 byte for frame start time delta
 	}, 0);
 
-    const buffer = new ArrayBuffer(headerSize + entriesSize + extraDataSize + framesStartTimesSize );  
+	const faceTransformMatricesSize = atlas.clips.reduce((sum, clip) => {
+		return sum + (clip.frames.length * 64); // 64 bytes for matrix4
+	}, 0) ; // align to 4 bytes
+
+	const totalBeforeAlignmen = headerSize + entriesSize + audioDataSize + framesStartTimesSize;
+	const alignedTotalBeforeAlignmen = (totalBeforeAlignmen + 3) & ~3;
+
+    const buffer = new ArrayBuffer( alignedTotalBeforeAlignmen + faceTransformMatricesSize );  
 
     const view = new DataView(buffer);
     let offset = 0;
@@ -60,7 +96,7 @@ export async function atlasToMCap(atlas: MeshCapAtlas, useRelativeLandmarks:bool
 	//
     // for each clip
 	//
-	for( let i=0; i<atlas.clips.length; i++ )
+	for( let i=0; i<totalClips; i++ )
 	{
 		//
 		// clip info
@@ -69,7 +105,7 @@ export async function atlasToMCap(atlas: MeshCapAtlas, useRelativeLandmarks:bool
 		new Uint8Array(buffer, offset, encodedIds[i].byteLength).set(encodedIds[i]);
 		offset += encodedIds[i].byteLength; 
 		
-		view.setUint8(offset, atlas.clips[i].frames.length);      offset += 1;
+		view.setUint16(offset, atlas.clips[i].frames.length);      offset += 2;
 		view.setUint8(offset, atlas.clips[i].fps);                 offset += 1;
 		view.setUint8(offset, Math.round(atlas.clips[i].scale * 100));         offset += 1;
 		view.setUint8(offset, Math.round(atlas.clips[i].aspectRatio * 100));   offset += 1;
@@ -84,21 +120,22 @@ export async function atlasToMCap(atlas: MeshCapAtlas, useRelativeLandmarks:bool
 			const landmarksCropUv = clipInfo.frames[j].cropUV; 
 			const frameAtlasCoords = clipInfo.frames[j].frameUV;
 
+			const cropPrecision = 10000;
 			//
 			// landmarks crop info
 			//
-			view.setUint16(offset, Math.round(frameAtlasCoords.u * 1000));      offset += 2;
-			view.setUint16(offset, Math.round(frameAtlasCoords.v * 1000));      offset += 2;
-			view.setUint16(offset, Math.round(frameAtlasCoords.w * 1000));  	offset += 2;
-			view.setUint16(offset, Math.round(frameAtlasCoords.h * 1000));  	offset += 2;
+			view.setUint16(offset, Math.round(frameAtlasCoords.u * cropPrecision));      offset += 2;
+			view.setUint16(offset, Math.round(frameAtlasCoords.v * cropPrecision));      offset += 2;
+			view.setUint16(offset, Math.round(frameAtlasCoords.w * cropPrecision));  	offset += 2;
+			view.setUint16(offset, Math.round(frameAtlasCoords.h * cropPrecision));  	offset += 2;
 
 			//
 			// frame's crop info
 			//
-			view.setUint16(offset, Math.round(landmarksCropUv.u * 1000));      offset += 2;
-			view.setUint16(offset, Math.round(landmarksCropUv.v * 1000));      offset += 2;
-			view.setUint16(offset, Math.round(landmarksCropUv.w * 1000));  	offset += 2;
-			view.setUint16(offset, Math.round(landmarksCropUv.h * 1000));  	offset += 2;
+			view.setUint16(offset, Math.round(landmarksCropUv.u * cropPrecision));      offset += 2;
+			view.setUint16(offset, Math.round(landmarksCropUv.v * cropPrecision));      offset += 2;
+			view.setUint16(offset, Math.round(landmarksCropUv.w * cropPrecision));  	offset += 2;
+			view.setUint16(offset, Math.round(landmarksCropUv.h * cropPrecision));  	offset += 2;
 
 			const landmarks = clipInfo.landmarks[j];
 			const prevLandmarks = j > 0 ? clipInfo.landmarks[j - 1] : null;
@@ -119,23 +156,26 @@ export async function atlasToMCap(atlas: MeshCapAtlas, useRelativeLandmarks:bool
 					// this is to allow for the compression to apparently pack more data.
 					//
 					if (prevLandmarks === null) {
+
 		                // First frame — store absolute
-		                view.setUint16(offset, x); offset += 2; // 0-100 fits in Uint8
-				    	view.setUint16(offset, y); offset += 2; // 0-100 fits in Uint8
-				    	view.setInt16(offset,  z); offset += 2; // ~-10 to 10 fits in Int8
+		                view.setUint16(offset, x); offset += 2;  
+				    	view.setUint16(offset, y); offset += 2;  
+				    	view.setInt16(offset,  z); offset += 2; 
+
 		            } else {
-		                // Subsequent frames — store delta
-		                const prevX = Math.round(prevLandmarks[k].x * 1000);
-		                const prevY = Math.round(prevLandmarks[k].y * 1000);
-		                const prevZ = Math.round(prevLandmarks[k].z * 1000);
+
+		                // Subsequent frames — store delta 
+						const prevX = Math.round(prevLandmarks[k].x * 1000);
+            			const prevY = Math.round(prevLandmarks[k].y * 1000);
+            			const prevZ = Math.round(prevLandmarks[k].z * 1000);
 
 		                const dx = x - prevX;
 		                const dy = y - prevY;
 		                const dz = z - prevZ;
 	 
-		                view.setInt8(offset, dx); offset += 1;
-		                view.setInt8(offset, dy); offset += 1;
-		                view.setInt8(offset, dz); offset += 1;
+		                view.setInt16(offset, dx); offset += 2;
+		                view.setInt16(offset, dy); offset += 2;
+		                view.setInt16(offset, dz); offset += 2;
 		            }
 				}
 				else 
@@ -161,7 +201,7 @@ export async function atlasToMCap(atlas: MeshCapAtlas, useRelativeLandmarks:bool
 	//
 	// audio sprites
 	// 
-	for( let i=0; i<atlas.clips.length; i++ )
+	for( let i=0; i<totalClips; i++ )
 	{
 		const clipInfo = atlas.clips[i];
 
@@ -181,32 +221,40 @@ export async function atlasToMCap(atlas: MeshCapAtlas, useRelativeLandmarks:bool
 	}
 
 	//
-	// store frame deltas ( time spent from the last frame to this one.)
+	// frame start times ( time spent from the last frame to this one.)
 	//
-	for( let i=0; i<atlas.clips.length; i++ )
+	for( let i=0; i<totalClips; i++ )
 	{
 		const clipInfo = atlas.clips[i];
 		let lastTimestamp = 0; 
 		for (const frame of clipInfo.frames) {
 			const delta = Math.floor((frame.startTime - lastTimestamp) * 1000); // ms
-			view.setUint8(offset, delta);
-			offset += 1;
+			view.setUint16(offset, delta);
+			offset += 2;
 			lastTimestamp = frame.startTime;
 		}
 	}
 
-	return new Promise<Blob>((resolve, reject)=>{
+	// align to 4 bytes
+	offset = (offset + 3) & ~3;
 
-		deflate(new Uint8Array(buffer), { level:9 }, ( err, result )=>{
-		
-			if( err ) return reject(err);
-			
-			const binBlob = new Blob([result as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' });
+	//
+	// store face transformation matrices
+	//
+	for( let i=0; i<totalClips; i++ )
+	{
+		const clipInfo = atlas.clips[i];
+		for (const frame of clipInfo.frames) {
 
-			resolve(binBlob); 
-		});
+			if(frame.transformMatrix)
+				frame.transformMatrix!.toArray(new Float32Array(buffer, offset, 16));
+			else
+				new Float32Array(buffer, offset, 16).fill(0);
 
-	})
- 
+			offset += 64;
+		}
+	}
+
+	return buffer; 
 }
  

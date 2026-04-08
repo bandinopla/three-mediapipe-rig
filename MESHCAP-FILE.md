@@ -15,7 +15,7 @@ File compressed with: https://www.npmjs.com/package/fflate using deflate at leve
  Per clip:
    [1 byte]  name length
    [n bytes] name string (utf8)
-   [1 bytes] total frames
+   [2 bytes] total frames
    [1 byte] fps
    [1 bytes] scale
    [1 bytes] aspectRatio
@@ -30,14 +30,17 @@ File compressed with: https://www.npmjs.com/package/fflate using deflate at leve
    [2 bytes] v
    [2 bytes] w
    [2 bytes] h
- For each 478 landmarks ( 2 bytes the first frame, then 1 byte):
-   [2/1 byte] x
-   [2/1 byte] y
-   [2/1 byte] z
+ For each 478 landmarks ( 2 bytes ):
+   [2 byte] x
+   [2 byte] y
+   [2 byte] z
 Per clip:
    [2 bytes] clip duration
    [2 bytes] audio clip start time ( in seconds. if == 1 it means it doesnt use sound )
    
 Per frame ( flatmap of all the frames from all the clips )
-   [1 bytes] frame's start time delta in clip's time ( 0 being the start of the clip ) 
+   [2 bytes] frame's start time delta in clip's time ( 0 being the start of the clip ) 
+
+Per Clip per frame (face transofrmation matrices of the face in each frame )
+	[64 bytes]
 ```

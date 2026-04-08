@@ -73,8 +73,9 @@ export interface BindingHandler {
 export interface RecorderHandler { 
 	/**
 	 * Starts recording the rig's movement and active shape keys ( from media pipe ).
+	 * @param fps Frames per second to record at. If 0, it will record at the current frame rate.
 	 */
-	startRecording: VoidFunction;
+	startRecording: ( fps?:number )=>void;
 
 	/**
 	 * Stops recording the rig's movement.
@@ -379,7 +380,7 @@ export async function setupTracker(config?: Partial<TrackerConfig>) : Promise<Tr
 
 			if(!poseTracker) throw new Error("Pose tracker not initialized");
 			if(!handsTracker) throw new Error("Hands tracker not initialized");
-			if(!faceTracker) throw new Error("Face tracker not initialized");
+			//if(!faceTracker) throw new Error("Face tracker not initialized");
 
             const bodyBindin = poseTracker.bind(rig, magging);
             const leftHandBinding = handsTracker.left.bind(rig, magging);

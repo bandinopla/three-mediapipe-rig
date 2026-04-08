@@ -169,7 +169,7 @@ export function createAudioAtlasPlayer( audioBuffer:AudioBuffer, clips:MCapClip[
 		    source.start(0, clip.audioSprite.start, clip.duration);
 
 			currentlyPlaying = source;
-			console.log("PLAYING SOUNC", clip.name)
+			//console.log("PLAYING SOUNC", clip.name)
 			 
 		    return source; // keep ref if you need to stop it early
 		}

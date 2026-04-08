@@ -8,4 +8,4 @@ web/
 wasm/
 *.task
 _ignore/
-notes
+notes*

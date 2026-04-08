@@ -1,10 +1,11 @@
-import { Mesh, Texture, Vector3Like, NodeMaterial} from "three/webgpu";
-import { MCapClip, MCapFile, RecordedClip, UVCoord } from "./types";
+import { Mesh, Texture, Vector3Like, NodeMaterial, Matrix4} from "three/webgpu";
+import { MCapClip, MCapFile, MeshCapAtlas, RecordedClip, UVCoord } from "./types";
 import { inflate } from "fflate";
 import { MCAP_FILE_VERSION, MCAP_MAGIC } from "./constants"; 
 import { FACE_LANDMARKS_COUNT } from "../tracking/util/face-tracker-utils";
 import { AudioSpriteAtlas, extractAudioSprites } from "./audio";
 import { createMeshCapMaterial } from "./material"; 
+import { atlasToMCapBuffer } from "./write-mcap-file"; 
 
 
 
@@ -40,17 +41,17 @@ export async function loadMeshCapFile( mcapFileSource:string|File ) : Promise<MC
  * @param compressedBuffer 
  * @returns 
  */
-async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCapFile> {
+async function deserializeMCapFile( compressedBuffer: ArrayBuffer, decompress=true) : Promise<MCapFile> {
     
 	let usesAudioAtlas = false;
 
     // Decompress first
-    const decompressed = await new Promise<Uint8Array>((resolve, reject) => {
+    const decompressed = decompress ? await new Promise<Uint8Array>((resolve, reject) => {
         inflate(new Uint8Array(compressedBuffer), (err, result) => {
             if (err) reject(err);
             else resolve(result);
         });
-    });
+    }) : new Uint8Array(compressedBuffer);
 
     const view = new DataView(decompressed.buffer);
     let offset = 0;
@@ -81,7 +82,10 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
         const name = new TextDecoder().decode(nameBytes);
         offset += nameLength;
 
-        const frameCount  = view.getUint8(offset);          offset += 1;
+        const frameCount  = version>=3? view.getUint16(offset): view.getUint8(offset); 
+							offset += version>=3? 2: 1;
+
+
         const fps         = view.getUint8(offset);          offset += 1;
         const scale       = view.getUint8(offset) / 100;    offset += 1;
         const aspectRatio = view.getUint8(offset) / 100;    offset += 1;
@@ -93,19 +97,21 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
         // --- Per frame ---
         for (let j = 0; j < frameCount; j++) {
 
+			const cropPrecision = version<3? 1000: 10000;
+
             // Atlas coords
-            const atlasX      = view.getUint16(offset) / 1000; offset += 2;
-            const atlasY      = view.getUint16(offset) / 1000; offset += 2;
-            const atlasWidth  = view.getUint16(offset) / 1000; offset += 2;
-            const atlasHeight = view.getUint16(offset) / 1000; offset += 2;
+            const atlasX      = view.getUint16(offset) / cropPrecision; offset += 2;
+            const atlasY      = view.getUint16(offset) / cropPrecision; offset += 2;
+            const atlasWidth  = view.getUint16(offset) / cropPrecision; offset += 2;
+            const atlasHeight = view.getUint16(offset) / cropPrecision; offset += 2;
 
             frameCoords.push({ u: atlasX, v: atlasY, w: atlasWidth, h: atlasHeight });
 
             // Crop UV
-            const u = view.getUint16(offset) / 1000; offset += 2;
-            const v = view.getUint16(offset) / 1000; offset += 2;
-            const w = view.getUint16(offset) / 1000; offset += 2;
-            const h = view.getUint16(offset) / 1000; offset += 2;
+            const u = view.getUint16(offset) / cropPrecision; offset += 2;
+            const v = view.getUint16(offset) / cropPrecision; offset += 2;
+            const w = view.getUint16(offset) / cropPrecision; offset += 2;
+            const h = view.getUint16(offset) / cropPrecision; offset += 2;
  
             uvCrop.push({ u, v, w, h });
 
@@ -121,15 +127,37 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
                     const z = view.getInt16(offset)  / 1000; offset += 2;
                     frameLandmarks.push({ x, y, z });
                 } else {
+
+					let dx:number, dy:number, dz:number;
+
                     // Delta frames — Int8
-                    const dx = view.getInt8(offset) / 1000; offset += 1;
-                    const dy = view.getInt8(offset) / 1000; offset += 1;
-                    const dz = view.getInt8(offset) / 1000; offset += 1;
-                    frameLandmarks.push({
-                        x: prevLandmarks[k].x + dx,
-                        y: prevLandmarks[k].y + dy,
-                        z: prevLandmarks[k].z + dz,
-                    });
+					if( version<3 )
+					{
+						dx = view.getInt8(offset) / 1000; offset += 1;
+						dy = view.getInt8(offset) / 1000; offset += 1;
+						dz = view.getInt8(offset) / 1000; offset += 1;
+
+						frameLandmarks.push({
+							x: prevLandmarks[k].x + dx,
+							y: prevLandmarks[k].y + dy,
+							z: prevLandmarks[k].z + dz, 
+						});
+					}
+					else
+					{
+						dx = view.getInt16(offset) / 1000; offset += 2;
+						dy = view.getInt16(offset) / 1000; offset += 2;
+						dz = view.getInt16(offset) / 1000; offset += 2;
+
+						frameLandmarks.push({
+							x: prevLandmarks[k].x + dx,
+							y: prevLandmarks[k].y + dy,
+							z: prevLandmarks[k].z + dz, 
+						});
+					}
+
+					
+                    
                 }
             }
 
@@ -178,23 +206,47 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
 
 				clips[i].audioSprite = { start: audioStart };
 				usesAudioAtlas = true; 
+
+				console.log("MCAP AUDIO CLIP;", audioStart, "Duration: ", clipDuration/1000)
 			} 
 		}
 
-		// -- extract frame deltas --
+		// -- extract frame timestamps --
 		for(let i=0; i<clips.length; i++)
 		{
 			const clipInfo = clips[i];
 			let lastTimestamp = 0;
 			for(let j=0; j<clipInfo.frames.length; j++)
 			{
-				const delta = view.getUint8(offset); offset += 1;
+				const delta = version<3? view.getUint8(offset): view.getUint16(offset); 
+				
+				offset += version<3? 1: 2;
+
 				const timestamp = lastTimestamp + delta / 1000;
 				clipInfo.frames[j].startTime = timestamp;
 				lastTimestamp = timestamp;
 			}
 		}
-	}
+
+		if( version>=3 )
+		{
+			// align to 4 bytes
+			offset = (offset + 3) & ~3; 
+
+			// -- extract face transformations
+
+			for(let i=0; i<clips.length; i++)
+			{
+				const clipInfo = clips[i];
+				for(let j=0; j<clipInfo.frames.length; j++)
+				{
+					const matrix = new Float32Array(view.buffer, offset, 16);
+					offset += 64;
+					clipInfo.frames[j].transformMatrix = new Matrix4().fromArray(matrix);
+				}
+			}
+		}
+	} 
 	
 
     return { 
@@ -204,16 +256,18 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
 		atlasPadding,
 
 		
-		unpackClips: async ( atlasSource:File|Blob|string|HTMLImageElement|HTMLCanvasElement, audioAtlasSource?:File|Blob|string|ArrayBuffer ) => {
+		async unpackClips( atlasSource:File|Blob|string|HTMLImageElement|HTMLCanvasElement, audioAtlasSource?:File|Blob|string|ArrayBuffer ) {
  
 			let atlas:HTMLCanvasElement;
 			let disposeAfter = true; 
 			let audioAtlas:AudioSpriteAtlas|undefined = undefined;
+			let atlasContext:CanvasRenderingContext2D|undefined = undefined;
 
 			if (atlasSource instanceof HTMLCanvasElement) 
 			{
 				disposeAfter = false;
 				atlas = atlasSource;
+				atlasContext = atlas.getContext('2d')!;
 			} 
 			else 
 			{ 
@@ -249,10 +303,9 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
 				atlas = document.createElement('canvas');
 				atlas.width = img.width;
 				atlas.height = img.height;
-				const ctx = atlas.getContext('2d')!;
-				ctx.drawImage(img, 0, 0);   
-			}
-
+				atlasContext = atlas.getContext('2d')!;
+				atlasContext.drawImage(img, 0, 0);   
+			} 
 			
 			const recordedClips = clips.map<RecordedClip>( clip => {
 				
@@ -307,9 +360,17 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer) : Promise<MCa
 			};
 		},
 
-		createMaterialHandlerOnMesh: (mesh:Mesh, atlasTexture:Texture, host?:NodeMaterial, audioAtlas?:AudioBuffer )=>{
+		createMaterialHandlerOnMesh(mesh:Mesh, atlasTexture:Texture	, host?:NodeMaterial, audioAtlas?:AudioBuffer ) {
+ 
 			const handler = createMeshCapMaterial(atlasTexture, clips, mesh, host, audioAtlas);
 			return handler;
 		}
 	};
+}
+
+
+export async function readAsMCapFile( atlas:MeshCapAtlas ) {
+	
+	const buffer = await atlasToMCapBuffer(atlas);
+	return deserializeMCapFile(buffer, false);
 }

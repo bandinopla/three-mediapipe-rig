@@ -10,7 +10,7 @@ type BoneRef = {
 };
 
 type Recorder = {
-	start: () => void;
+	start: (fps?:number) => void;
 	captureFrame: () => void;
 	stop: (name?: string) => {
 		clip: THREE.AnimationClip;
@@ -83,19 +83,34 @@ export function createRigRecorder(
 
     let recording = false;
     let startTime = 0;
+	let _fps = 0;
+	let timeSinceLastCapture = 0;
+	let frameTime = 0;
 
-    function start() {
+    function start( fps?:number ) {
         boneTracks.clear();
 		blendShapeTracks.clear();
 		times.length = 0;
+
+		_fps = fps ?? 0;
+		frameTime = _fps > 0 ? 1.0 / _fps : 0;
+
         startTime = performance.now() / 1000;
         recording = true;
+		timeSinceLastCapture = 0;
     }
 
     function captureFrame() {
         if (!recording) return;
 
         const time = performance.now() / 1000 - startTime;
+
+		if( _fps > 0 && time - timeSinceLastCapture < frameTime )
+		{
+			return;
+		}
+
+		timeSinceLastCapture = time;
 
 		times.push(time);
 
@@ -107,7 +122,7 @@ export function createRigRecorder(
             const track = boneTracks.get(bone.name)!;  
 			 
             const q = bone.ref.quaternion;
-            track.push(q.x, q.y, q.z, q.w);
+            track.push(q.x, q.y, q.z, q.w); 
         } 
 
 		for (const key of usedBlendShapeKeys) {
@@ -153,13 +168,14 @@ export function createRigRecorder(
 				),
 			);
 		}
+ 
 
         const clip = new THREE.AnimationClip(name, -1, keyframeTracks);
  
 
         return {
 			clip,
-			saveToFile:() => {
+			saveToFile:() => new Promise((resolve, reject)=>{
 	            const exporter = new GLTFExporter();
 	            exporter.parse(
 	                rigRoot,
@@ -174,16 +190,18 @@ export function createRigRecorder(
 	                    a.href = url;
 	                    a.download = name + ".glb";
 	                    a.click();
+						resolve(true);
 	                },
 	                (error) => {
 	                    console.error(error);
+						reject(error);
 	                },
 	                {
 	                    binary: true,
 	                    animations: [clip],
 	                },
 	            );
-	        }
+	        })
 		};
     }
 

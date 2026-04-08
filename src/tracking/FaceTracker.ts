@@ -2,14 +2,15 @@ import {
     Category,
     DrawingUtils,
     FaceLandmarker,
+	Matrix,
 	NormalizedLandmark
 } from "@mediapipe/tasks-vision";
-import { BufferAttribute, Mesh, Object3D, Vector3, Node, VideoTexture, SRGBColorSpace, MeshPhysicalNodeMaterial, UniformNode, NodeMaterial } from "three/webgpu";
+import { BufferAttribute, Mesh, Object3D, Vector3, Node, VideoTexture, SRGBColorSpace, MeshPhysicalNodeMaterial, UniformNode, NodeMaterial, Matrix4 } from "three/webgpu";
 import { Tracker } from "./Tracker";
 import { rootPosition } from "./util/getRootPosition";
 import { getBoneByName } from "./util/getBoneByName";
 import { lookAt } from "./util/lookAt";
-import { attribute, float, instancedArray, mix, texture, uniform, varying, vec2, vec3 } from "three/tsl";  
+import { attribute, float, instancedArray, mix, positionLocal, select, texture, uniform, varying, vec2, vec3 } from "three/tsl";  
 import { createFaceLandmarksIndexAttribute, FACE_LANDMARKS_COUNT } from "./util/face-tracker-utils";
 
 
@@ -27,6 +28,7 @@ export async function loadFaceTracker(vision: any, cfg?: FaceTrackerConfig ) {
 			delegate: "GPU", 
         },
 		outputFaceBlendshapes: true,
+		outputFacialTransformationMatrixes: true,
         runningMode: "VIDEO",
 		numFaces: 1,
     });
@@ -62,13 +64,14 @@ const v3 = new Vector3();
 const v4 = new Vector3();
 const v5 = new Vector3();
 const v6 = new Vector3();
-
+ 
 export class FaceTracker extends Tracker<typeof faceMarks> {
 	private blendshapeCategories: Category[] | undefined;
 	private blendshapeMap: Map<string, number> = new Map();
 	private smoothed: Record<string, number> = {};
 	private smoothing =.0003; // lower = smoother but more lag, higher = more responsive
 	private _faceLandmarks: NormalizedLandmark[] = [];
+	private _facialTransformationMatrix: Matrix4 | undefined; 
 
 	constructor(private faceLandmarker: FaceLandmarker, private cfg:FaceTrackerConfig) {
 		super(faceMarks, FaceLandmarker.FACE_LANDMARKS_TESSELATION)
@@ -88,9 +91,23 @@ export class FaceTracker extends Tracker<typeof faceMarks> {
 			}
 
 			this.updateLandmarks(result.faceLandmarks[0], result.faceLandmarks[0] );
-		}
 
-		this._faceLandmarks = result.faceLandmarks[0];
+			this._faceLandmarks = result.faceLandmarks[0];
+
+			if(!this._facialTransformationMatrix )
+			{
+				this._facialTransformationMatrix = new Matrix4();
+			}
+			
+			const m = result.facialTransformationMatrixes[0];
+
+			this._facialTransformationMatrix.set(
+				m.data[0],  m.data[1],  m.data[2],  m.data[3],
+				m.data[4],  m.data[5],  m.data[6],  m.data[7],
+				m.data[8],  m.data[9],  m.data[10], m.data[11],
+				m.data[12], m.data[13], m.data[14], m.data[15]
+			); 
+		}  
 
 		this.blendshapeCategories = result.faceBlendshapes?.[0]?.categories; 
 
@@ -102,6 +119,15 @@ export class FaceTracker extends Tracker<typeof faceMarks> {
 
 	get lastKnownLandmarks() {
 		return this._faceLandmarks;
+	}
+
+	/**
+	 * this matrix is useful to know how the canonical mesh is rotated.
+	 * This allows to move other objects to simulate the same transformation that the skull/face is having.
+	 * Used for things like hats, glasses, etc... things you want to make look like they are attatched to the face mesh.
+	 */
+	get lastKnownFacialTransformationMatrix() {
+		return this._facialTransformationMatrix;
 	}
 
 	bindShapeKeys(mesh: Mesh) {
@@ -175,7 +201,7 @@ export class FaceTracker extends Tracker<typeof faceMarks> {
 	 * @param mesh basically either the original or a clone of the canonical_face_model
 	 * @returns an object with a disposeMaterial method that should be called when the mesh is disposed of.
 	 */
-	bindGeometry( mesh:Mesh, setupTheMaterialYourself?:( posNode:Node, colorNode:Node )=>void )
+	bindGeometry( mesh:Mesh, setupTheMaterialYourself?:( posNode:Node<"vec3">, colorNode:Node<"vec4"> )=>void )
 	{ 
 		const A = new Vector3();
 		const B = new Vector3();
@@ -184,9 +210,24 @@ export class FaceTracker extends Tracker<typeof faceMarks> {
 
 		const geometry = mesh.geometry;
         const posAttr = geometry.attributes.position; 
+
+		/// 209  429
+
+		//
+		// The provided cannonical face by google has the origin of the mesh at a plaze that doesn't match the origin
+		// used by the faceLandmarks.z. Based on observation and testing i've noticed:
+		// the half point of this segment is the one that the landmarks Z use as origin (z=0) or at least they match visually...
+		//
+		const originA = 209;
+		const originB = 429;
+
+		const origin = uniform(new Vector3().addVectors(
+			new Vector3(posAttr.getX(originA), posAttr.getY(originA), posAttr.getZ(originA)),
+			new Vector3(posAttr.getX(originB), posAttr.getY(originB), posAttr.getZ(originB))
+		).multiplyScalar(.5));
  
 
-		const center = uniform(new Vector3(0.5, 0.5, 0.5));
+		//const center = uniform(new Vector3(0.5, 0.5, 0.5));
 
 		createFaceLandmarksIndexAttribute(mesh);
 
@@ -196,18 +237,21 @@ export class FaceTracker extends Tracker<typeof faceMarks> {
 		const sampleUV = varying( landmarkStore.element(landmarkIndexAttr) ).xy;
 		let video:HTMLVideoElement|undefined;
 
+		// scale reference is a distance between 2 points in the face that is used to make everything relative to that
+		// so we can have a way to obtain the scale of the face regardless of how far or close the face is from camera.
 		const scaleRefIndexA = 116;
 		const scaleRefIndexB = 346;
 
+		// the length of A to B
 		const meshFaceReference = C.subVectors(
 			new Vector3(posAttr.getX(scaleRefIndexA), posAttr.getY(scaleRefIndexA), posAttr.getZ(scaleRefIndexA)),
 			new Vector3(posAttr.getX(scaleRefIndexB), posAttr.getY(scaleRefIndexB), posAttr.getZ(scaleRefIndexB))
 		).lengthSq(); 
 
-		console.log("# mesh face reference (live): ", meshFaceReference);
+		//console.log("# mesh face reference (live): ", meshFaceReference);
 
 		const geometryScaleReference = uniform(meshFaceReference);
-		const landmarkScaleReference = uniform(1); // will be calculated below.
+		const landmarkScaleReference = uniform(1); // will be calculated below in the "update" function, on every frame.
 
 		
 		let disposeMaterial:VoidFunction|undefined;
@@ -245,7 +289,7 @@ export class FaceTracker extends Tracker<typeof faceMarks> {
 						.sub( landmarkStore.element( scaleRefIndexA ) ) 
 						.lengthSq();
 
-					const ratio = geometryScaleReference.div(landmarkScaleReference).sqrt().mul(2);
+					const ratio = geometryScaleReference.div(landmarkScaleReference).sqrt()//.mul(2);
 
 
 					const A1 = landmarkStore.element(234).xy;
@@ -263,7 +307,8 @@ export class FaceTracker extends Tracker<typeof faceMarks> {
 
 					
 					// ionitialize material
-					const positionNode = landmarkStore.element(landmarkIndexAttr).sub(center).xzy .mul(vec3( 1,-1, float(1).div(videoRatio) )).mul(ratio);
+					const mediapipePosition = landmarkStore.element(landmarkIndexAttr).sub(center).xzy .mul(vec3( 1,-1, float(1).div(videoRatio) )).mul(ratio).add(origin);
+					const positionNode = select( landmarkIndexAttr.toUint().lessThanEqual(FACE_LANDMARKS_COUNT), mediapipePosition, positionLocal)
 
 
 					const colorNode = texture(tex, vec2( sampleUV.x, sampleUV.y.oneMinus())); 

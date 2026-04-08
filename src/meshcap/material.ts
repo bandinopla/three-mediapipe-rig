@@ -1,13 +1,26 @@
 import { Mesh, Texture } from "three";
 import { MCapClip } from "./types";
-import { MeshPhysicalNodeMaterial, NodeMaterial, Vector3 } from "three/webgpu"; 
-import { attribute, float, instancedArray, select, texture, uniform, varying, vec3 } from "three/tsl";
+import { Matrix4, MeshPhysicalNodeMaterial, NodeMaterial, Vector3 } from "three/webgpu"; 
+import { attribute, float, instancedArray, positionLocal, select, texture, uniform, varying, vec3 } from "three/tsl";
 import { createFaceLandmarksIndexAttribute, FACE_LANDMARKS_COUNT } from "../tracking/util/face-tracker-utils"; 
 import { createAudioAtlasPlayer } from "./audio";
 
  
 
 export type MeshCapMaterialHandler = {
+
+	/**
+	 * 4x4 transformation matrix from MediaPipe Face tracking.
+	 * Represents the face pose in camera space (position, rotation, scale).
+	 * Can be applied directly to 3D objects to align them with the tracked face. 
+	 * 
+	 * Returns the last known face transform matrix.
+	 * Everytime you call `update` and the frames get evaluated, this will return the transformMatrix the face has in the
+	 * current frame. You can use this to position hats, hair, etc. Remember this transformation is from the face's origin perspective. 
+	 * So if you do add a hat, make sure the origin point of it is at the same place as the origin point of the face mesh so the rotations look alright.
+	 * @returns 
+	 */
+	getLastKnownFaceTransform:()=>Matrix4|undefined;
 
 	/**
 	 * If it should play a sound or not (if it has one. Default: false )
@@ -232,7 +245,8 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
 
 	host.colorNode = colorNode ;
 
-	//
+	
+
 	
 	const A1 = landmarkStore.element(clipLandmarksStartIndex.add(234)).xy;
 	const A2 = landmarkStore.element(clipLandmarksStartIndex.add(93)).xy;
@@ -257,6 +271,20 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
 		new Vector3(posAttr.getX(scaleRefIndexB), posAttr.getY(scaleRefIndexB), posAttr.getZ(scaleRefIndexB))
 	).lengthSq(); 
 
+
+	//
+	// The provided cannonical face by google has the origin of the mesh at a plaze that doesn't match the origin
+	// used by the faceLandmarks.z. Based on observation and testing i've noticed:
+	// the half point of this segment is the one that the landmarks Z use as origin (z=0) or at least they match visually...
+	//
+	const originA = 209;
+	const originB = 429; 
+	const origin = uniform(new Vector3().addVectors(
+		new Vector3(posAttr.getX(originA), posAttr.getY(originA), posAttr.getZ(originA)),
+		new Vector3(posAttr.getX(originB), posAttr.getY(originB), posAttr.getZ(originB))
+	).multiplyScalar(.5));
+
+
 	const geometryScaleReference = uniform(meshFaceReference);
  
 	
@@ -265,11 +293,11 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
 						.sub( landmarkStore.element(clipLandmarksStartIndex.add(scaleRefIndexA)) ) 
 						.lengthSq();
 
-	const ratio = geometryScaleReference.div(landmarkScaleReference).sqrt().mul(2);
+	const ratio = geometryScaleReference.div(landmarkScaleReference).sqrt(); //.mul(2);
 
-	const positionNode = currentLandmark.sub(center).xzy .mul(vec3( 1,-1, float(1).div(clipAspectRatio) )).mul(ratio);
+	const positionNode = currentLandmark.sub(center).xzy .mul(vec3( 1,-1, float(1).div(clipAspectRatio) )).mul(ratio).add(origin);
 	
-	host.positionNode = positionNode;  
+	host.positionNode = select( landmarkIndexAttr.toUint().lessThanEqual(FACE_LANDMARKS_COUNT), positionNode, positionLocal)
 
 	let currentClipTotalTime = 0;
 	let currentClipTime = 0;
@@ -283,12 +311,16 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
 	let _play = false;
 
 	let audiosAtlasHandler = audioAtlas? createAudioAtlasPlayer(audioAtlas, clips):undefined;
+	let _lastKnownFaceTransform:Matrix4|undefined = undefined;
 
 	const handler:MeshCapMaterialHandler = {
 		muted:false,
 		clips,
 		atlasTexture,
 		material:host,
+
+		getLastKnownFaceTransform:()=>_lastKnownFaceTransform, 
+
 		goto(_clipID:number|string, _loop=true, _onEndReached?:( offset:number )=>void, _playSound=true) {
 
 			let _clipIndex = -1;
@@ -339,7 +371,11 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
 			// go to the right frame ( we assume will always move forward in time )
 			//
 			clipFrame.value = getFrameAtTime(currentFrames, currentClipTime, clipFrame.value);
-		 
+
+			//
+			// current orientation of the face at the time of the frame
+			//
+			_lastKnownFaceTransform = currentFrames[clipFrame.value].transformMatrix; 
 
 			if( loop.value ){
 				if( currentClipTime >= currentClipTotalTime ){

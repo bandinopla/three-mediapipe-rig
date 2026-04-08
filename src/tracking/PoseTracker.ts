@@ -48,10 +48,12 @@ const poseMarks = {
 			rightElbow: 14,
 			rightWrist: 16, 
 			head: [8,7] //between the ears
+			, forehead:[5,2]
 			, mouth:[10,9]
 			, torso: [24,23, 12,11] //at the center of the torso
 			, leftEar: 7
 			, rightEar: 8
+			, nose: 0
 		} ;
 
 type MarkKey = keyof typeof poseMarks;
@@ -79,6 +81,8 @@ export class PoseTracker extends Tracker<typeof poseMarks> {
 	private _leftWristNormalizedPosition!:NormalizedLandmark;
 	private _rightWristNormalizedPosition!:NormalizedLandmark;
 
+	ignoreLegs:boolean = false;
+
 	/**
 	 * Position of the left wrist in normalized coordinates (0..1)
 	 */
@@ -96,6 +100,8 @@ export class PoseTracker extends Tracker<typeof poseMarks> {
 		this.root.scale.y *= -2
 		this.root.scale.z *= -2
 		this.root.scale.x *= 2 
+
+		this.ignoreLegs = config?.ignoreLegs ?? false;
 	}
 
 	override predict( source:TexImageSource, drawingUtils:DrawingUtils ){
@@ -192,16 +198,19 @@ export class PoseTracker extends Tracker<typeof poseMarks> {
 				syncBone(delta, map.hips, "hips", "torso", sideHips, "+x")
 				syncBone(delta, map.torso, "torso", "neck", sideShoulders, "+x")
 				syncBone(delta, map.neck, "neck", "head", sideHead, "+x")
-				syncBone(delta, map.head, "neck", "head", sideHead, "+x")
+				syncBone(delta, map.head, "nose", "forehead", sideHead, "+x")
 
 				syncBone(delta, map.leftArm, "leftArm", "leftElbow", sideShoulders, "-x")
 				syncBone(delta, map.leftElbow, "leftElbow", "leftWrist", sideShoulders, "-x")
-				syncBone(delta, map.leftLeg, "leftLeg", "leftKnee", sideHips, "+x") 
-				syncBone(delta, map.leftKnee, "leftKnee", "leftFoot", sideHips, "+x") 
-				syncBone(delta, map.leftFoot, "leftFoot", "leftToes", sideHips, "+x") 
 
 				syncBone(delta, map.rightArm, "rightArm", "rightElbow", sideShoulders, "-x")
 				syncBone(delta, map.rightElbow, "rightElbow", "rightWrist", sideShoulders, "-x")
+
+				if( this.ignoreLegs ) return;
+				
+				syncBone(delta, map.leftLeg, "leftLeg", "leftKnee", sideHips, "+x") 
+				syncBone(delta, map.leftKnee, "leftKnee", "leftFoot", sideHips, "+x") 
+				syncBone(delta, map.leftFoot, "leftFoot", "leftToes", sideHips, "+x")  
 				syncBone(delta, map.rightLeg, "rightLeg", "rightKnee", sideHips, "+x") 
 				syncBone(delta, map.rightKnee, "rightKnee", "rightFoot", sideHips, "+x") 
 				syncBone(delta, map.rightFoot, "rightFoot", "rightToes", sideHips, "+x") 

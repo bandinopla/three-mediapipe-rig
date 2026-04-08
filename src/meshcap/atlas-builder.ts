@@ -1,102 +1,7 @@
+import { Texture, TextureLoader } from "three";
 import { MeshCapAtlas, MCapClip, RecordedClip, UVCoord } from "./types";
 import { atlasToMCap } from "./write-mcap-file";
-
-
-// interface Shelf {
-//     y: number;
-//     height: number;
-//     currentX: number;
-// }
-
-// /**
-//  * Simple shelf bin packer algorithm.
-//  * Sorts items by height (descending) and packs them into shelves.
-//  */
-// function packShelves(
-//     items: { id: number; width: number; height: number }[],
-//     atlasWidth: number
-// ): { id: number; x: number; y: number; width: number; height: number }[] {
-//     const shelves: Shelf[] = [];
-//     const result: { id: number; x: number; y: number; width: number; height: number }[] = [];
-//     let currentY = 0;
-
-//     // Sort by height descending for better packing
-//     const sorted = [...items].sort((a, b) => b.height - a.height);
-
-//     for (const item of sorted) {
-//         // Try to fit in an existing shelf
-//         let placed = false;
-//         for (const shelf of shelves) {
-//             if (
-//                 item.width <= atlasWidth - shelf.currentX &&
-//                 item.height <= shelf.height
-//             ) {
-//                 result.push({ id: item.id, x: shelf.currentX, y: shelf.y, width: item.width, height: item.height });
-//                 shelf.currentX += item.width;
-//                 placed = true;
-//                 break;
-//             }
-//         }
-
-//         // Open a new shelf
-//         if (!placed) {
-//             const newShelf: Shelf = {
-//                 y: currentY,
-//                 height: item.height,
-//                 currentX: item.width,
-//             };
-//             shelves.push(newShelf);
-//             result.push({ id: item.id, x: 0, y: currentY, width: item.width, height: item.height });
-//             currentY += item.height;
-//         }
-//     }
-
-//     return result;
-// }  
-
-
-
-// function runShelfPack(
-//     sorted: { id: number; width: number; height: number }[],
-//     atlasWidth: number
-// ): {
-//     result: { id: number; x: number; y: number; width: number; height: number }[];
-//     totalHeight: number;
-// } {
-//     const shelves: Shelf[] = [];
-//     const result: { id: number; x: number; y: number; width: number; height: number }[] = [];
-//     let currentY = 0;
-
-//     for (const item of sorted) {
-//         let placed = false;
-
-//         for (const shelf of shelves) {
-//             if (
-//                 item.width <= atlasWidth - shelf.currentX &&
-//                 item.height <= shelf.height
-//             ) {
-//                 result.push({ id: item.id, x: shelf.currentX, y: shelf.y, width: item.width, height: item.height });
-//                 shelf.currentX += item.width;
-//                 placed = true;
-//                 break;
-//             }
-//         }
-
-//         if (!placed) {
-//             const newShelf: Shelf = {
-//                 y: currentY,
-//                 height: item.height,
-//                 currentX: item.width,
-//             };
-//             shelves.push(newShelf);
-//             result.push({ id: item.id, x: 0, y: currentY, width: item.width, height: item.height });
-//             currentY += item.height;
-//         }
-//     }
-
-//     return { result, totalHeight: currentY };
-// }
-
+ 
 
 interface Shelf {
     y: number;
@@ -293,7 +198,8 @@ export function buildMeshCapAtlas( clips:RecordedClip[], atlasSize:number, paddi
 			mcapClip.frames.push({
 				frameUV:entries[ frameIndex++ ],
 				cropUV:frame.cropUV,
-				startTime:frame.startTime
+				startTime:frame.startTime,
+				transformMatrix:frame.transformMatrix
 			});
 		}
 		mcapClips.push(mcapClip);
@@ -303,6 +209,10 @@ export function buildMeshCapAtlas( clips:RecordedClip[], atlasSize:number, paddi
 	ctx.font = `${Math.max(6, Math.floor(12 ))}px monospace`; 
 	ctx.fillStyle = "#ff0000";
 	ctx.fillText("Created with MeshCap : https://bandinopla.github.io/three-mediapipe-rig/?editor=meshcap", 0, atlasHeight - 4);
+
+	//-------------------
+ 
+
 
     return { 
 		canvas: atlasCanvas, 
@@ -321,7 +231,157 @@ export function buildMeshCapAtlas( clips:RecordedClip[], atlasSize:number, paddi
 				binLink.remove();
 			}
 			return binBlob;
+		},
+		async saveImageAtlas( phrase?:string, asJpg?:boolean ) {
+	        const link = document.createElement("a");
+	        link.download = asJpg ? "atlas.jpg" : "atlas.png";
+
+			let canvas = this.canvas;
+
+			if( phrase )
+			{
+				return await downloadObfuscatedCanvas(canvas, phrase, asJpg);
+			}
+
+	        link.href = canvas.toDataURL( asJpg? "image/jpeg" : "image/png", asJpg?0.8:1 );
+	        link.click();
 		}
 	};
 }
+
+function xorBuffer(buffer: ArrayBuffer, pass: string) {
+	const data = new Uint8Array(buffer);
+
+	// simple key from passphrase
+	let key = 0;
+	for (let i = 0; i < pass.length; i++) {
+		key = (key + pass.charCodeAt(i)) & 255;
+	}
+
+	// XOR
+	for (let i = 0; i < data.length; i++) {
+		data[i] ^= key;
+	}
+
+	return data;
+}
  
+async function downloadObfuscatedCanvas(canvas: HTMLCanvasElement, pass: string, asJpg?:boolean) {
+	const blob = await new Promise<Blob>((res) => canvas.toBlob(res as any, asJpg? "image/jpeg" : "image/png", asJpg?0.8:1));
+	const buffer = await blob!.arrayBuffer();
+	const data = xorBuffer(buffer, pass); 
+
+	const outBlob = new Blob([data], { type: "application/octet-stream" });
+	const url = URL.createObjectURL(outBlob);
+
+	const a = document.createElement("a");
+	a.href = url;
+	a.download = "atlas.mcatlas";
+	a.click();
+
+	URL.revokeObjectURL(url);
+}
+
+/**
+ * Load an atlas from a URL or File. If will handle deobfuscation if the file is an .mcapatlas file.
+ * @param atlasSource URL or File of the atlas. If it is an .mcapatlas file, it will be deobfuscated.
+ * @param pass If the atlas is obfuscated, provide the passphrase to deobfuscate it.
+ * @returns 
+ */
+export async function loadMeshcapAtlas( atlasSource:string|File, pass?:string ) 
+{ 
+	if (typeof atlasSource === "string") {
+
+		if( atlasSource.endsWith(".mcatlas") ){
+			const response = await fetch(atlasSource);
+			const buffer = await response.arrayBuffer();
+			return await deObfuscate(buffer, pass!);
+		}
+		else 
+		{
+			return new TextureLoader().loadAsync(atlasSource);
+		}
+
+		
+	} else { 
+
+		if( atlasSource.name.endsWith(".mcatlas") ){
+
+			return new Promise<Texture<HTMLImageElement>>((resolve, reject) => {
+					const reader = new FileReader();
+					reader.onload = (e) => {
+						const buffer = e.target!.result as ArrayBuffer;
+
+						resolve( deObfuscate(buffer,pass!) ) 
+					}
+					reader.onerror = (e) => {
+						reject(e);
+					}
+					reader.readAsArrayBuffer(atlasSource);
+			}) ;
+			
+		}
+
+		const url = URL.createObjectURL(atlasSource);
+
+		return await new Promise<Texture<HTMLImageElement>>((resolve, reject) => {
+			new TextureLoader().load(url, resolve, undefined, reject);
+		});
+	}
+}
+ 
+
+async function deObfuscate(buffer: ArrayBuffer, pass: string) {
+
+	if(!pass){
+		throw new Error("No passphrase provided");
+	}
+
+	const data = xorBuffer(buffer, pass); 
+ 
+	const blob = new Blob([data], { type: "image/png" });
+	const url = URL.createObjectURL(blob);
+
+	const image = document.createElement("img");
+
+	await new Promise<void>((resolve, reject) => {
+		image.onload = () => resolve();
+		image.onerror = reject;
+		image.src = url;
+	});
+
+	const texture = new Texture(image);
+	texture.needsUpdate = true;
+
+	//URL.revokeObjectURL(url); 
+
+	return texture;
+}
+
+
+export async function obfuscateImage(image:HTMLImageElement, pass:string) {
+	const canvas = document.createElement('canvas');
+	canvas.width = image.width;
+	canvas.height = image.height;
+	const ctx = canvas.getContext('2d')!;
+	
+	ctx.drawImage(image, 0, 0);
+
+	const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+		canvas.toBlob(jpgBlob => { 
+
+			if(!jpgBlob){
+				reject(new Error("Failed to create blob"));
+				return;
+			} 
+
+			resolve(jpgBlob.arrayBuffer());
+
+		}, 'image/jpeg', 0.75);
+	});
+
+	const data = xorBuffer(buffer, pass);
+
+	return new Blob([data], { type: "application/octet-stream" });
+	
+}
