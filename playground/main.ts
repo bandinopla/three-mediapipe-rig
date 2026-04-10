@@ -10,7 +10,7 @@ import { gameYoutubers } from "./game-youtubers";
 import { bandinoplaChibiExample } from "./bandinopla-chibi";
 
 // — Renderer —
-const renderer = new THREE.WebGPURenderer({ antialias: true });
+const renderer = new THREE.WebGPURenderer({ antialias: false });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;

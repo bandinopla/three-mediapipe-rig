@@ -36,5 +36,5 @@ export const createFaceLandmarksIndexAttribute = ( mesh:Mesh ) =>
 			posIndex2LandmarkIndex.push(idx < FACE_LANDMARKS_COUNT ? idx : 65535);
         } 
 
-		geometry.setAttribute("landmarkIndex", new BufferAttribute(new Uint16Array(posIndex2LandmarkIndex), 1));	
+		geometry.setAttribute("landmarkIndex", new BufferAttribute(new Float32Array(posIndex2LandmarkIndex), 1));	
 }

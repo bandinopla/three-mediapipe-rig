@@ -231,7 +231,7 @@ export class FaceTracker extends Tracker<typeof faceMarks> {
 
 		createFaceLandmarksIndexAttribute(mesh);
 
-		const landmarkIndexAttr = attribute("landmarkIndex", "uint");
+		const landmarkIndexAttr = attribute("landmarkIndex", "float").toUint();;
 		const landmarkStore = instancedArray(FACE_LANDMARKS_COUNT, "vec3");
 
 		const sampleUV = varying( landmarkStore.element(landmarkIndexAttr) ).xy;

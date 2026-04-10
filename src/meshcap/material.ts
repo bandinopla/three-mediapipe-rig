@@ -1,7 +1,7 @@
 import { Mesh, Texture } from "three";
 import { MCapClip } from "./types";
-import { Matrix4, MeshPhysicalNodeMaterial, NodeMaterial, Vector3 } from "three/webgpu"; 
-import { attribute, float, instancedArray, positionLocal, select, texture, uniform, varying, vec3 } from "three/tsl";
+import { DataTexture, Node, FloatType, Matrix4, MeshPhysicalNodeMaterial, NodeMaterial, RGBAFormat, Vector3, NearestFilter } from "three/webgpu"; 
+import { attribute, float, instancedArray, nodeObject, positionLocal, select, texture, uniform, varying, vec2, vec3 } from "three/tsl";
 import { createFaceLandmarksIndexAttribute, FACE_LANDMARKS_COUNT } from "../tracking/util/face-tracker-utils"; 
 import { createAudioAtlasPlayer } from "./audio";
 
@@ -137,17 +137,19 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
 
 	let cropRectIndex = 0;
 	let landmarksIndex = 0;
+	let totalFrames = 0;
 	for (let i=0; i<clips.length; i++) {
 		const clip = clips[i];
 		clipInfo.push(cropRectIndex, landmarksIndex, clip.frames.length, clip.fps);
 		cropRectIndex += clip.frames.length;
 		landmarksIndex += clip.frames.length * FACE_LANDMARKS_COUNT; 
+		totalFrames += clip.frames.length;
 		clipAspect.push(clip.aspectRatio); 
 		clipFramesStartIndex.push( i==0? 0 : clipFramesStartIndex[i-1] + clips[i-1].frames.length );
 	}
  
 	const clipAspectRatioNode = instancedArray(new Float32Array(clipAspect), "float");
-	const clipInfoNode = instancedArray(new Uint32Array(clipInfo), "uvec4");
+	//const clipInfoNode = instancedArray(new Float32Array(clipInfo), "vec4") 
 
 	//
 	// uv coords for each frame in the atlas
@@ -157,23 +159,78 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
 		return acc;
 	}, [] as number[] ) );
 
-	const cropRectsNode = instancedArray(cropRects, "vec4");
-
 	//
 	// landmarks cropped UVs coords ( in the same space as the normalized landmarks )
 	//
 	const landmarksCropUvs = new Float32Array( clips.flatMap( clip => clip.frames.flatMap( frame=>[frame.cropUV.u, frame.cropUV.v, frame.cropUV.w, frame.cropUV.h]) ) );
-	const landmarksCropUvsNode = instancedArray(landmarksCropUvs, "vec4");
+	
+
+	//
+	// crop data
+	//
+	const frames = clips.flatMap(clip=>clip.frames);
+
+	const cropData = new Float32Array( frames.reduce( (acc, entry) => {
+
+		// frame UV
+		acc.push(entry.frameUV.u, entry.frameUV.v, entry.frameUV.w, entry.frameUV.h);
+ 
+
+		return acc;
+	}, [] as number[] ) .concat(
+		frames.reduce( (acc, entry) => {
+ 
+
+			// landmarks cropped UVs coords ( in the same space as the normalized landmarks )
+			acc.push(entry.cropUV.u, entry.cropUV.v, entry.cropUV.w, entry.cropUV.h);
+
+			return acc;
+		}, [] as number[] )
+	)
+
+	);	
+
+	//const cropRectsNode = instancedArray(cropRects, "vec4");
+
+	const CROP_DATA_FRAMEUV_V = 0.25;
+	const CROP_DATA_LANDMARKSCROPUV_V = 0.75;
+
+	const cropDataTexture = new DataTexture(
+		cropData,
+		totalFrames,
+		2,
+		RGBAFormat,
+		FloatType
+	);
+	cropDataTexture.flipY = false;
+	cropDataTexture.magFilter = NearestFilter;
+	cropDataTexture.minFilter = NearestFilter;
+	cropDataTexture.needsUpdate = true;  
 
 	//
 	// LANDMARKS_COUNT landmarks per frame
 	//
-	const landmarks = new Float32Array( clips.flatMap( clip => clip.landmarks.flatMap( marks=>marks.flatMap( m=>[m.x, m.y, m.z]) ) ) );
-	//const totalFrames = clips.reduce((acc, clip) => acc + clip.frames.length, 0);
+	const landmarks = new Float32Array( clips.flatMap( clip => clip.landmarks.flatMap( marks=>marks.flatMap( m=>[m.x, m.y, m.z, 0]) ) ) ); 
+	//const landmarkStore = instancedArray(landmarks, "vec3");
  
- 
-	const landmarkStore = instancedArray(landmarks, "vec3");
 
+	// Create texture  
+	const width = FACE_LANDMARKS_COUNT;
+	const height = totalFrames;  
+
+	const landmarkTexture = new DataTexture(
+	    landmarks,  
+	    width,
+	    height,
+	    RGBAFormat,
+	    FloatType
+	);
+
+	landmarkTexture.flipY = false;
+	landmarkTexture.magFilter = NearestFilter;
+	landmarkTexture.minFilter = NearestFilter;  
+	landmarkTexture.needsUpdate = true;
+	
 	
 	const atlasNode = texture(atlasTexture);
 
@@ -184,29 +241,12 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
 	const loop = uniform(true);
 
 	const clipAspectRatio = clipAspectRatioNode.element(clipIndex);
-
-	// const clipFPS = clipInfoNode.element(clipIndex).w;
-	// const clipTotalFrames = clipInfoNode.element(clipIndex).z;  
-
-	//
-	// convertine the time passed to the frame equivalent in this clip ( taking into acount the FPS )
-	//
-	//const timeToFrame = totalTime.mul(clipFPS).floor().toUint(); 
  
-	//
-	// if loop is false and we are past the end of the clip, clamp to the last frame
-	// otherwise wrap around
-	//
-	// const _clipFrame = select(
-	// 	loop.not().and(timeToFrame.greaterThanEqual(clipTotalFrames)), // no loop + past end
-	// 	clipTotalFrames.sub(1),                                        // → clamp to last frame
-	// 	timeToFrame.mod(clipTotalFrames)                               // → wrap around
-	// );
 
 	/**
 	 * this array holds per clip how many frame data was before it.
 	 */
-	const clipFramesStartIndexStore = instancedArray(new Uint32Array(clipFramesStartIndex), "uint");
+	const clipFramesStartIndexStore = instancedArray(new Float32Array(clipFramesStartIndex), "float");
 
 	/**
 	 * Frame index inside of the clip's timeline
@@ -216,42 +256,63 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
 	/**
 	 * Frame index in the main timeline that contains every clip in a sequence
 	 */
-	const timelineFrameIndex = clipFramesStartIndexStore.element(clipIndex).add(clipFrameIndex);
-
-
-	const cropRect = cropRectsNode.element(clipInfoNode.element(clipIndex).x.add(clipFrameIndex));
-	const clipLandmarksStartIndex = clipInfoNode.element(clipIndex).y.add(clipFrameIndex.mul(FACE_LANDMARKS_COUNT)); 
+	const timelineFrameIndex =  clipFramesStartIndexStore.element(clipIndex).add(clipFrameIndex)  ;
  
-
+	const cropRect = texture( cropDataTexture, vec2( timelineFrameIndex.add(0.5).div(totalFrames), CROP_DATA_FRAMEUV_V )) ;
+ 
 
 	//
 	// a map of each vertex to its corresponding landmark index
 	//
-	const landmarkIndexAttr = attribute("landmarkIndex", "uint").toUint();
-
-
-	const landmarkIndex = clipLandmarksStartIndex.add( landmarkIndexAttr )
-	const currentLandmark = landmarkStore.element(landmarkIndex);
-	const currentLandmarksCropCoords = landmarksCropUvsNode.element(timelineFrameIndex);
-
-	const uvToUse = currentLandmark.xy.sub(currentLandmarksCropCoords.xy).div(currentLandmarksCropCoords.zw) // .sub( currentLandmarksCropCoords.xy ).mul( currentLandmarksCropCoords.zw  ) ;
-	
-	const flippedUv = uvToUse //vec2( uvToUse.x, uvToUse.y.mul( float(1).div(clipAspectRatio) ));
- 
-	const sampleUV = varying( cropRect.xy.add(flippedUv.mul(cropRect.zw)) ) ;
+	const landmarkIndexAttr = attribute("landmarkIndex", "float").toInt();
  
 
-	const colorNode = texture(atlasNode, sampleUV );
+	const landmarkIndex = varying( landmarkIndexAttr ) //clipLandmarksStartIndex.add( landmarkIndexAttr )
 
-	host.colorNode = colorNode ;
+
+	//const currentLandmark = landmarkStore.element(landmarkIndex);
+	const getLandmark = ( landmarkIndex:Node|number )=>{
+
+		//return landmarkStore.element(clipLandmarksStartIndex.add( landmarkIndex ));
+
+		const lmIdx = nodeObject(landmarkIndex).toFloat() ;
+		const frameIdx = timelineFrameIndex.toFloat().add(0.5);
+ 
+	    const u = lmIdx.div(width).add(0.5 / width);
+	    const v = frameIdx.div(height).add(0.5 / height);
+ 
+	    
+		// convert from 0-1 to -1 1
+		const landmark = texture(landmarkTexture, vec2(u, v));
+		return vec3(
+			landmark.x ,
+			landmark.y ,
+			landmark.z 
+		);
+	}
+
+	const currentLandmark = getLandmark(landmarkIndex);
+
+    const currentLandmarksCropCoords = texture( cropDataTexture, vec2( timelineFrameIndex.add(0.5).div(totalFrames), CROP_DATA_LANDMARKSCROPUV_V )) ;
+
+	const uvToUse = currentLandmark.xy .sub(currentLandmarksCropCoords.xy).div(currentLandmarksCropCoords.zw) ;
+	
+ 
+ 
+	const sampleUV = varying(  cropRect.xy .add(uvToUse.mul(cropRect.zw)) ) ;
+ 
+
+	const colorNode = texture(atlasNode , sampleUV);
+
+	host.colorNode = colorNode  ; 
 
 	
 
 	
-	const A1 = landmarkStore.element(clipLandmarksStartIndex.add(234)).xy;
-	const A2 = landmarkStore.element(clipLandmarksStartIndex.add(93)).xy;
-	const B1 = landmarkStore.element(clipLandmarksStartIndex.add(454)).xy;
-	const B2 = landmarkStore.element(clipLandmarksStartIndex.add(323)).xy; 
+	const A1 = getLandmark(234).xy;
+	const A2 = getLandmark(93).xy;
+	const B1 = getLandmark(454).xy;
+	const B2 = getLandmark(323).xy; 
 
 	const A = A1.sub(A2).div(2).add(A2);
 	const B = B1.sub(B2).div(2).add(B2);
@@ -289,8 +350,8 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
  
 	
 
-	const landmarkScaleReference = landmarkStore.element(clipLandmarksStartIndex.add(scaleRefIndexB))
-						.sub( landmarkStore.element(clipLandmarksStartIndex.add(scaleRefIndexA)) ) 
+	const landmarkScaleReference = getLandmark(scaleRefIndexB)
+						.sub( getLandmark(scaleRefIndexA) ) 
 						.lengthSq();
 
 	const ratio = geometryScaleReference.div(landmarkScaleReference).sqrt(); //.mul(2);
@@ -302,6 +363,8 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
 	let currentClipTotalTime = 0;
 	let currentClipTime = 0;
 	let currentClip:MCapClip|undefined;
+ 
+
 
 	/**
 	 * callback called when the clip reaches the end or loops again
@@ -371,6 +434,7 @@ export function createMeshCapMaterial( atlasTexture:Texture, clips:MCapClip[], t
 			// go to the right frame ( we assume will always move forward in time )
 			//
 			clipFrame.value = getFrameAtTime(currentFrames, currentClipTime, clipFrame.value);
+		 
 
 			//
 			// current orientation of the face at the time of the frame

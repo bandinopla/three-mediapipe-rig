@@ -150,7 +150,7 @@ export function buildMeshCapAtlas( clips:RecordedClip[], atlasSize:number, paddi
     // determine scale to fit within atlasSize
     const scale = Math.min(1.0, atlasSize / initialWidth, atlasSize / initialHeight);
     const atlasWidth = Math.floor(initialWidth * scale);
-    const atlasHeight = Math.floor(initialHeight * scale)+footerHeight;
+    const atlasHeight = nextPowerOf2( Math.floor(initialHeight * scale)+footerHeight);
 
 	// Create the atlas canvas
     const atlasCanvas = document.createElement('canvas');

@@ -333,6 +333,7 @@ async function deserializeMCapFile( compressedBuffer: ArrayBuffer, decompress=tr
 							canvas: frameCanvas,
 							cropUV: frame.cropUV, 
 							startTime: frame.startTime, 
+							transformMatrix: frame.transformMatrix
 						};
 					})
 				};

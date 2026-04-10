@@ -7,8 +7,8 @@
 
 import { Color, DirectionalLight } from "three"
 import { StandaloneDemoHandler } from "./demo-type"
-import { AnimationMixer, AudioLoader, Bone, DoubleSide, InstancedMesh, LinearFilter, Matrix4, Mesh, MeshBasicNodeMaterial, MeshPhysicalMaterial, MeshPhysicalNodeMaterial, NoToneMapping, Object3D, PerspectiveCamera, PMREMGenerator, PointLight, Quaternion, RenderPipeline, Scene, SRGBColorSpace, Texture, UniformNode, UnsignedByteType, Vector3, WebGPURenderer } from "three/webgpu";
-import { DRACOLoader, GLTFLoader, RoomEnvironment } from "three/examples/jsm/Addons.js";
+import { AnimationMixer, AudioLoader, Bone, DoubleSide, InstancedMesh, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshBasicNodeMaterial, MeshPhysicalMaterial, MeshPhysicalNodeMaterial, NoToneMapping, Object3D, PerspectiveCamera, PMREMGenerator, PointLight, Quaternion, RenderPipeline, Scene, SRGBColorSpace, Texture, UniformNode, UnsignedByteType, Vector3, WebGPURenderer } from "three/webgpu";
+import { DRACOLoader, GLTFLoader, KTX2Loader, RoomEnvironment } from "three/examples/jsm/Addons.js";
 import { loadMeshcapAtlas, loadMeshCapFile } from "three-mediapipe-rig/meshcap";
 import { colorToDirection, diffuseColor, directionToColor, float, mat3, mix, mrt, mx_noise_float, normalView, output, pass, positionLocal, sample, saturation, texture, time, uniform, uv, vec2, vec3, vec4, velocity } from "three/tsl";
 import { dof } from "three/examples/jsm/tsl/display/DepthOfFieldNode.js";
@@ -20,11 +20,22 @@ import { plotFunction, spinner } from "./spinner";
 
 const assetsUrl = import.meta.env.BASE_URL +"bandinopla-chibi/";
 
+const dpr = window.devicePixelRatio;
+const screenWidth = window.screen.width;
+const isMobile = dpr >= 2 && screenWidth <= 480; 
+
 export const bandinoplaChibiExample: StandaloneDemoHandler = {
 	name: "bandinopla-chibi", 
 	setup: (renderer, camera, scene, tracker) => {
 
 		// link to posecap
+		if( isMobile )
+		{
+			
+			renderer.shadowMap.enabled = false;
+			const dpr = isMobile ? Math.min(window.devicePixelRatio, 2) : window.devicePixelRatio;
+			renderer.setPixelRatio(dpr);
+		}
 
 		const posecapLink = document.createElement("a");
 		posecapLink.href = "https://bandinopla.github.io/three-mediapipe-rig/?editor=posecap";
@@ -48,7 +59,7 @@ export const bandinoplaChibiExample: StandaloneDemoHandler = {
 		document.body.appendChild(posecapLink);
 
 
-		// credits 
+		// credits  
 		document.querySelector("#credits > div:last-child")!.innerHTML = `
 			Face by <a target="_blank" href="https://x.com/bandinopla">bandinopla</a>
 			<br/>
@@ -64,6 +75,10 @@ export const bandinoplaChibiExample: StandaloneDemoHandler = {
 			<br/>
 			Ending Song by <a target="_blank" href="https://x.com/VideoGameIX/status/2032834139460874323">Toaka</a>
 			`; 
+		if( isMobile )
+		{
+			document.getElementById("credits")!.style.display = "none";
+		}
 
  
 		let loaded = false;
@@ -117,10 +132,16 @@ export const bandinoplaChibiExample: StandaloneDemoHandler = {
 	
 		loader.setDRACOLoader(draco);
 
+		// const ktx2Loader = new KTX2Loader();
+		// ktx2Loader.setTranscoderPath( assetsUrl+"../kt2/" );
+		// ktx2Loader.detectSupport( renderer );
+
 		const assets = [
 			loader.loadAsync(assetsUrl+"gugu.glb"),
 			loadMeshCapFile(assetsUrl+"yo.mcap"),
+			//loadMeshCapFile(assetsUrl+"yo-mobile.mcap"),
 			loadMeshcapAtlas(assetsUrl+"yo-jpg.mcatlas","bandinopla jejeje"),
+			//ktx2Loader.loadAsync( assetsUrl+"yo-mobile.ktx2" ),
 			new AudioLoader().loadAsync(assetsUrl+"yo2.mp3"),
 			new AudioLoader().loadAsync(assetsUrl+"animeending.mp3"),
 			new AudioLoader().loadAsync(assetsUrl+"birds.mp3"),
@@ -180,7 +201,7 @@ export const bandinoplaChibiExample: StandaloneDemoHandler = {
 					cameraPosition.copy(camera.position);
 				} else if (child instanceof PointLight) {
 					child.intensity = 0;
-				} else if (child instanceof Mesh && child.name!=="Plane" && child.name!=="sky" && child.name!=="bird" ) {
+				} else if (child instanceof Mesh && child.name!=="ground" && child.name!=="Plane" && child.name!=="sky" && child.name!=="bird" ) {
 					child.castShadow = true;
 					child.receiveShadow = true;
 					child.material = new MeshPhysicalMaterial({
@@ -200,7 +221,7 @@ export const bandinoplaChibiExample: StandaloneDemoHandler = {
 				}
 				else if( child instanceof Bone )
 				{
-					console.log("Bone", child.name != child.userData.name?"EPA!!!!!!:"+child.name+"->"+child.userData.name:"OK")
+					//console.log("Bone", child.name != child.userData.name?"EPA!!!!!!:"+child.name+"->"+child.userData.name:"OK")
 				} 
 			});
 
@@ -217,13 +238,14 @@ export const bandinoplaChibiExample: StandaloneDemoHandler = {
  
 			faceAtlas.flipY = false;
 			faceAtlas.colorSpace = SRGBColorSpace;
-			faceAtlas.generateMipmaps = false;
+			//faceAtlas.generateMipmaps = false;
 			faceAtlas.magFilter = LinearFilter;
 			faceAtlas.minFilter = LinearFilter;
 
 			const faceCap = mcap.createMaterialHandlerOnMesh(face,faceAtlas, undefined, audioBuffer)
 
 			const faceMat = face.material as MeshPhysicalNodeMaterial;
+			
 			faceMat.colorNode = faceCap.material.colorNode!.mul(maskFactor).mul(1.0);
 			faceMat.roughness = 0.8;
 			faceMat.sheen = 0.1;
@@ -231,6 +253,7 @@ export const bandinoplaChibiExample: StandaloneDemoHandler = {
 			faceMat.sheenRoughness = 0.1;
 			faceMat.emissiveNode = faceCap.material.colorNode!.mul(maskFactor);
 			faceMat.emissiveIntensity = 0.8;
+			faceMat.side = DoubleSide;
 
 			let t = -1;
 
@@ -364,11 +387,9 @@ export const bandinoplaChibiExample: StandaloneDemoHandler = {
 
 		// post processing
 		renderer.toneMapping = NoToneMapping; 
-		renderer.toneMappingExposure = .5 ;
-		renderer.shadowMap.enabled = true;
-
-		const isMobile = navigator.maxTouchPoints > 0;
-		const renderPipeline = isMobile ? false : setupPostProcessing(renderer, scene, camera, fadeFactor);
+		renderer.toneMappingExposure = .5 ; 
+ 
+		const renderPipeline = setupPostProcessing(renderer, scene, camera, fadeFactor);
 
 		let ang = 0;
 		const r = 0.05
@@ -391,10 +412,18 @@ function setupPostProcessing(
 	fadeFactor: UniformNode<"float",number>
 ) {
 	
+	if( isMobile )
+	{
+		return;
+	}
 
 	const renderPipeline = new RenderPipeline(renderer);
 
 	const scenePass = pass(scene, camera);
+
+	
+
+
 	scenePass.setMRT(
 		mrt({
 			output: output,
@@ -416,9 +445,9 @@ function setupPostProcessing(
 	const normalTexture = scenePass.getTexture("normal");
 	normalTexture.type = UnsignedByteType;
 
-	const sceneNormal = sample((uv) => {
-		return colorToDirection(scenePassNormal.sample(uv));
-	});
+	// const sceneNormal = sample((uv) => {
+	// 	return colorToDirection(scenePassNormal.sample(uv));
+	// });
 
 	// const giPass = ssgi(scenePassColor, scenePassDepth, sceneNormal, camera);
 	// giPass.sliceCount.value = 2;
@@ -453,15 +482,20 @@ function setupPostProcessing(
 
 	const aberr = chromaticAberration(dofPas, vec2(0.1, 0.01), vec2(0.5,0.5))
 
-	const vig = saturation( vignette(aberr, effectController.vignetteIntensity, effectController.vignetteSmoothness), 1.2 )
+	const vig = vignette(aberr, effectController.vignetteIntensity, effectController.vignetteSmoothness)
  
-	const withBloom = vig.add( bloom(vig, .2, .8, 1 ) )
+	
+
+	
+
+
+	const withBloom = saturation( vig.add( bloom(vig, .2, .8, 1 ) ), 1.2 )
 
 	renderPipeline.outputNode = mix( withBloom, vec4(0,0,0,1),fadeFactor ) //film(withBloom, float(0.6));
 
-	renderer.inspector = new Inspector();
-	renderer.inspector.init()
-
+	
+// renderer.inspector = new Inspector();
+// 	renderer.inspector.init()
 	// const gui = renderer.inspector.createParameters( 'Settings' );
 	// 			gui.add( effectController.focusDistance, 'value', 0.0, 11.0 ).name( 'focus distance' );
 	// 			gui.add( effectController.focalLength, 'value', 0, 11 ).name( 'focal length' );
@@ -483,9 +517,9 @@ function setupGrass(grassLeaf: Mesh, ground: Mesh, scene: Scene) {
         unique.add(`${x},${y},${z}`);
     }
 
-	ground.material = new MeshPhysicalMaterial({
-		color: new Color(0x333333)
-	})
+	ground.material = new MeshBasicMaterial({
+		 color: new Color(0x333333)
+	}) 
 
 	grassLeaf.visible = false;
 	
@@ -608,7 +642,7 @@ class Subtitles {
 		div.style.left = "50%";
 		div.style.transform = "translateX(-50%)";
 		div.style.color = "white";
-		div.style.fontSize = "50px";
+		div.style.fontSize = "4vh";
 		div.style.zIndex = "991000";
 		div.style.textAlign = "center";
 		div.style.textShadow = "0 0 10px black";
@@ -623,8 +657,7 @@ class Subtitles {
 			div.style.display = "none";
 		}
 		this.update = ( time:number ) => {
-			div.style.display = "block"; 
-			console.log( time )
+			div.style.display = "block";  
 			const caption = audioSubtitles.find(s => s.start <= time && s.end >= time);
 			if (caption) {
 				div.textContent = caption.text;
